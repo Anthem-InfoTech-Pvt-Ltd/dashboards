@@ -20,6 +20,7 @@ export default async function DashboardRootLayout({ children }: { children: Reac
     FROM [dbo].[tblUsers]
     WHERE LOWER([EmailId]) = ${email.toLowerCase()}
   `;
+  
   const dbUser = userResult.recordset?.[0];
 
   if (!dbUser) {
