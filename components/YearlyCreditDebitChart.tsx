@@ -209,7 +209,7 @@ export const YearlyCreditDebitChart = ({
   return (
     <Card className="shadow-lg border-0 bg-white dark:bg-gray-800">
       <CardHeader className="flex justify-between flex-col lg:flex-row">
-        <CardTitle className="text-gray-800 dark:text-white text-md">
+        <CardTitle className="text-gray-800 dark:text-white text-base">
           Yearly Credit vs Debit ({selectedYear})
         </CardTitle>
         <div className="flex gap-2 items-center">
@@ -263,11 +263,15 @@ export const YearlyCreditDebitChart = ({
           </div>
         ) : (
           <>
-            <HighchartsReact
-              highcharts={Highcharts}
-              constructorType="stockChart"
-              options={options}
-            />
+            <div className="w-full overflow-x-auto">
+              <div className="min-w-[800px]">
+                <HighchartsReact
+                  highcharts={Highcharts}
+                  constructorType="stockChart"
+                  options={options}
+                />
+              </div>
+            </div>
             {/* Legend */}
             <div className="flex justify-center gap-4 mt-4 text-sm">
               <div className="flex items-center gap-1">

@@ -14,7 +14,7 @@ interface DailyExpenseChart {
     selectedGlobalYear: number;
 }
 
-export const DailyExpenseChart: React.FC<DailyExpenseChart> = ({years, currency, selectedGlobalYear}) => {
+export const DailyExpenseChart: React.FC<DailyExpenseChart> = ({ years, currency, selectedGlobalYear }) => {
     const [data, setData] = useState<ExpenseRecord[]>([])
     const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1) // current month
     const [selectedYear, setSelectedYear] = useState(selectedGlobalYear || new Date().getFullYear())
@@ -118,48 +118,52 @@ export const DailyExpenseChart: React.FC<DailyExpenseChart> = ({years, currency,
                         </div>
                     </div>
                 ) : (
-                    <ChartContainer
-                        config={{
-                            credit: { label: "Credit", color: "#22c55e" },
-                            debit: { label: "Debit", color: "#ef4444" },
-                        }}
-                        className="h-[350px] w-full"
-                    >
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={data} margin={{ top: 20, right: 20, bottom: 50, left: 0 }}>
-                                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                                <XAxis
-                                    dataKey="date"
-                                    angle={-45}
-                                    textAnchor="end"
-                                    interval={0}
-                                    dy={10}
-                                    stroke="#888"
-                                />
-                                <YAxis 
-                                    stroke="#888"
-                                    tickFormatter={formatNumber}
-                                />
-                                <Tooltip
-                                    content={({ active, payload }) => {
-                                        if (active && payload && payload.length) {
-                                            const d = payload[0].payload
-                                            return (
-                                                <div className="bg-white p-2 border shadow rounded text-sm">
-                                                    <p className="font-bold">{d.date}</p>
-                                                    <p>Credit: {currency}{formatNumber(d.credit)}</p>
-                                                    <p>Debit: {currency}{formatNumber(d.debit)}</p>
-                                                </div>
-                                            )
-                                        }
-                                        return null
-                                    }}
-                                />
-                                <Line type="monotone" dataKey="credit" stroke="#22c55e" strokeWidth={2} dot={false} />
-                                <Line type="monotone" dataKey="debit" stroke="#ef4444" strokeWidth={2} dot={false} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </ChartContainer>
+                    <div className="w-full overflow-x-auto">
+                        <div className="min-w-[800px]">
+                            <ChartContainer
+                                config={{
+                                    credit: { label: "Credit", color: "#22c55e" },
+                                    debit: { label: "Debit", color: "#ef4444" },
+                                }}
+                                className="h-[350px] w-full"
+                            >
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={data} margin={{ top: 20, right: 20, bottom: 50, left: 0 }}>
+                                        <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                                        <XAxis
+                                            dataKey="date"
+                                            angle={-45}
+                                            textAnchor="end"
+                                            interval={0}
+                                            dy={10}
+                                            stroke="#888"
+                                        />
+                                        <YAxis
+                                            stroke="#888"
+                                            tickFormatter={formatNumber}
+                                        />
+                                        <Tooltip
+                                            content={({ active, payload }) => {
+                                                if (active && payload && payload.length) {
+                                                    const d = payload[0].payload
+                                                    return (
+                                                        <div className="bg-white p-2 border shadow rounded text-sm">
+                                                            <p className="font-bold">{d.date}</p>
+                                                            <p>Credit: {currency}{formatNumber(d.credit)}</p>
+                                                            <p>Debit: {currency}{formatNumber(d.debit)}</p>
+                                                        </div>
+                                                    )
+                                                }
+                                                return null
+                                            }}
+                                        />
+                                        <Line type="monotone" dataKey="credit" stroke="#22c55e" strokeWidth={2} dot={false} />
+                                        <Line type="monotone" dataKey="debit" stroke="#ef4444" strokeWidth={2} dot={false} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </ChartContainer>
+                        </div>
+                    </div>
                 )}
             </CardContent>
         </Card>

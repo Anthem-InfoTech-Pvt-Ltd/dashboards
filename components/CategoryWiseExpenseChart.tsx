@@ -38,7 +38,7 @@ export const CategoryWiseExpenseChart: React.FC<CategoryWiseExpenseChart> = ({ y
         setIsDarkMode(document.documentElement.classList.contains("dark"));
         return () => observer.disconnect();
     }, []);
-    
+
     // Fetch API Data
     useEffect(() => {
         const fetchData = async () => {
@@ -128,9 +128,9 @@ export const CategoryWiseExpenseChart: React.FC<CategoryWiseExpenseChart> = ({ y
     };
     return (
         <Card className="shadow-lg border-0 bg-white dark:bg-gray-800 lg:col-span-8 col-span-1">
-            <CardHeader className="flex justify-between flex-col lg:flex-row">
+            <CardHeader className="flex justify-between flex-row">
                 <div>
-                    <CardTitle className="text-md font-semibold text-gray-800 dark:text-white">
+                    <CardTitle className="text-base font-semibold text-gray-800 dark:text-white">
                         Category-wise Monthly Expenses
                     </CardTitle>
                 </div>
@@ -146,7 +146,7 @@ export const CategoryWiseExpenseChart: React.FC<CategoryWiseExpenseChart> = ({ y
                     </select>
                 </div>
             </CardHeader>
-            <CardContent className="h-[350px]">
+            <CardContent className="h-[400px] sm:h-[350px]">
                 {loading ? (
                     <div className="h-full flex items-center justify-center">
                         <div className="w-full h-full flex flex-col items-center justify-center gap-4">
@@ -156,7 +156,11 @@ export const CategoryWiseExpenseChart: React.FC<CategoryWiseExpenseChart> = ({ y
                         </div>
                     </div>
                 ) : chartSeries.length > 0 ? (
-                    <HighchartsReact highcharts={Highcharts} options={options} />
+                    <div className="w-full overflow-x-auto">
+                        <div className="min-w-[700px]">
+                            <HighchartsReact highcharts={Highcharts} options={options} />
+                        </div>
+                    </div>
                 ) : (
                     <div className="h-full flex items-center justify-center">
                         <div className="text-center text-gray-500 dark:text-gray-400">

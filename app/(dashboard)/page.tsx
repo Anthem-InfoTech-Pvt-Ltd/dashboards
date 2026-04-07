@@ -1,5 +1,6 @@
 "use client"
 
+import ExpenseChatbot from "@/components/ExpenseChatbot"
 import MainDashboard from "@/components/main-dashboard"
 // import DashboardContent from "@/components/dashboard-content"
 import { createContext, useContext, useState } from "react"
@@ -22,9 +23,10 @@ export default function Dashboard() {
   const [secondaryColor, setSecondaryColor] = useState("#f59e0b")
 
   return (
-      <ThemeContext.Provider value={{ primaryColor, secondaryColor, setPrimaryColor, setSecondaryColor }}>
-        {/* <DashboardContent /> */}
-        <MainDashboard />
-      </ThemeContext.Provider>
+    <ThemeContext.Provider value={{ primaryColor, secondaryColor, setPrimaryColor, setSecondaryColor }}>
+      {/* <DashboardContent /> */}
+      <MainDashboard />
+      <ExpenseChatbot />
+    </ThemeContext.Provider>
   )
 }

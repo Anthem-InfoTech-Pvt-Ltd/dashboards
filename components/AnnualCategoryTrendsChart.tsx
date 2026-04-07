@@ -31,9 +31,9 @@ export const AnnualCategoryTrendsChart: React.FC<AnnualCategoryTrendsChart> = ({
   const { user } = useAuth()
   const groupId = user?.groupId
 
-    useEffect(() => {
-        setSelectedYear(selectedGlobalYear); // Sync with global year when it changes
-    }, [selectedGlobalYear]);
+  useEffect(() => {
+    setSelectedYear(selectedGlobalYear); // Sync with global year when it changes
+  }, [selectedGlobalYear]);
 
   // Load Highcharts modules
   useEffect(() => {
@@ -206,7 +206,7 @@ export const AnnualCategoryTrendsChart: React.FC<AnnualCategoryTrendsChart> = ({
   return (
     <Card className="col-span-full shadow-md border-0 bg-white dark:bg-gray-800">
       <CardHeader className="flex justify-between lg:flex-row flex-col">
-        <CardTitle className="text-md font-semibold">Annual Category Trends (Heatmap)</CardTitle>
+        <CardTitle className="text-base font-semibold">Annual Category Trends (Heatmap)</CardTitle>
         <div>
           <select
             value={selectedYear}
@@ -220,7 +220,11 @@ export const AnnualCategoryTrendsChart: React.FC<AnnualCategoryTrendsChart> = ({
         </div>
       </CardHeader>
       <CardContent>
-        <HighchartsReact highcharts={Highcharts} options={options} />
+        <div className="w-full overflow-x-auto">
+          <div className="min-w-[750px]">
+            <HighchartsReact highcharts={Highcharts} options={options} />
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

@@ -212,7 +212,7 @@ export const AreaYearlyExpenseChart: React.FC<AreaYearlyExpenseChart> = ({
   return (
     <Card className="shadow-lg border-0 bg-white col-span-1 lg:col-span-3 dark:bg-gray-800">
       <CardHeader className="flex justify-between lg:flex-row flex-col">
-        <CardTitle className="text-md font-semibold">Yearly Credit, Debit & Net Balance</CardTitle>
+        <CardTitle className="text-base font-semibold">Yearly Credit, Debit & Net Balance</CardTitle>
         <select
           className="bg-gray-100 dark:bg-gray-700 border dark:border-gray-600 text-xs text-gray-800 dark:text-white rounded-md px-2 py-1"
           value={selectedYear}
@@ -264,7 +264,11 @@ export const AreaYearlyExpenseChart: React.FC<AreaYearlyExpenseChart> = ({
             No data available for selected year.
           </div>
         ) : (
-          <ReactECharts option={option} style={{ height: "400px" }} />
+          <div className="w-full overflow-x-auto">
+            <div className="min-w-[700px]">
+              <ReactECharts option={option} style={{ height: "400px" }} />
+            </div>
+          </div>
         )}
       </CardContent>
     </Card>

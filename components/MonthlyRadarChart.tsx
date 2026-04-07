@@ -135,7 +135,7 @@ export const MonthlyRadarChart: React.FC<MonthlyRadarChart> = ({ years, selected
     <Card className="shadow-lg border-0 bg-white dark:bg-gray-800 lg:col-span-4 col-span-1">
       <CardHeader className="pb-2 flex flex-col lg:flex-row justify-between gap-2">
         <div>
-          <CardTitle className="flex items-center gap-2 text-gray-800 dark:text-white text-md">
+          <CardTitle className="flex items-center gap-2 text-gray-800 dark:text-white text-base">
             Monthly Credit vs Debit
           </CardTitle>
         </div>

@@ -131,7 +131,7 @@ export default function DashboardContent() {
         <StackedBarCategoryChart years={years} selectedGlobalYear={selectedGlobalYear} currency={currency} />
         <div className="grid grid-cols-1 lg:grid-cols-11 gap-6">
           <CategoryCumulativeChart years={years} selectedGlobalYear={selectedGlobalYear} currency={currency} />
-          <AdvancedPolarChart years={years} selectedGlobalYear={selectedGlobalYear} currency={currency} />
+          {/* <AdvancedPolarChart years={years} selectedGlobalYear={selectedGlobalYear} currency={currency} /> */}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
           <YearlyCreditDebitChart years={years} selectedGlobalYear={selectedGlobalYear} currency={currency} />

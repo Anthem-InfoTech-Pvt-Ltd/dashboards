@@ -219,11 +219,15 @@ export const StackedBarCategoryChart: React.FC<StackedBarCategoryChartProps> = (
     <Card className="shadow-lg border-0 bg-white col-span-6 dark:bg-gray-800 lg:col-span-6">
       <CardHeader className="pb-2 flex justify-between flex-col lg:flex-row">
         <div>
-          <CardTitle className="text-gray-800 dark:text-white text-md">Yearly Debit by Category</CardTitle>
+          <CardTitle className="text-gray-800 dark:text-white text-base">Yearly Debit by Category</CardTitle>
         </div>
       </CardHeader>
       <CardContent className="">
-        <div ref={chartContainerRef} style={{ height: `${height}px` }} />
+        <div className="w-full overflow-x-auto">
+          <div className="min-w-[700px]">
+            <div ref={chartContainerRef} style={{ height: `${height}px` }} />
+          </div>
+        </div>
       </CardContent>
     </Card>
   );

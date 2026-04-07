@@ -241,7 +241,7 @@ export default function ExpensesPage() {
         </div> */}
 
         {/* Filters */}
-        {/* <Card>
+        <Card>
           <CardHeader>
             <CardTitle className="text-lg">Filters</CardTitle>
           </CardHeader>
@@ -305,7 +305,7 @@ export default function ExpensesPage() {
               </div>
             </div>
           </CardContent>
-        </Card> */}
+        </Card>
         {/* Expenses Table */}
         <Card>
           <div className="flex justify-between px-6 pt-6 pb-4">

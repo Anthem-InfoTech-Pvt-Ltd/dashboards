@@ -18,7 +18,7 @@ export const NetBalanceChart: React.FC<NetBalanceChart> = ({ years, currency, se
   const groupId = user?.groupId
   const [isDarkMode, setIsDarkMode] = useState(false)
 
-    useEffect(() => {
+  useEffect(() => {
     setSelectedYear(selectedGlobalYear); // Sync with global year when it changes
   }, [selectedGlobalYear]);
 
@@ -266,8 +266,8 @@ export const NetBalanceChart: React.FC<NetBalanceChart> = ({ years, currency, se
   }
   return (
     <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-4 col-span-full">
-      <div className="flex justify-between items-center mb-2 flex-col lg:flex-row">
-        <h2 className="text-lg text-gray-800 dark:text-white font-semibold">
+      <div className="flex justify-between items-center mb-4 flex-row lg:flex-row sm:flex-col">
+        <h2 className="text-base text-gray-800 dark:text-white font-semibold">
           Net Balance ({currency})
         </h2>
         <select
@@ -320,11 +320,15 @@ export const NetBalanceChart: React.FC<NetBalanceChart> = ({ years, currency, se
             </div>
           </div>
         ) : chartData.length > 0 ? (
-          <HighchartsReact
-            highcharts={Highcharts}
-            constructorType="stockChart"
-            options={options}
-          />
+          <div className="w-full overflow-x-auto">
+            <div className="min-w-[700px]">
+              <HighchartsReact
+                highcharts={Highcharts}
+                constructorType="stockChart"
+                options={options}
+              />
+            </div>
+          </div>
         ) : (
           <div className="text-center text-gray-500 dark:text-gray-400">
             No data available for selected year
@@ -332,39 +336,6 @@ export const NetBalanceChart: React.FC<NetBalanceChart> = ({ years, currency, se
         )}
       </div>
     </div>
-    // <Card className="col-span-full shadow-lg border-0 bg-white dark:bg-gray-800">
-    //   <CardHeader className='flex justify-between flex-col lg:flex-row'>
-    //     <CardTitle className="text-md text-gray-800 dark:text-white">
-    //       Net Balance ({currency})
-    //     </CardTitle>
-    //     <div className="flex gap-2 items-center">
-    //       <select
-    //         className="bg-gray-100 dark:bg-gray-700 border dark:border-gray-600 text-xs text-gray-800 dark:text-white rounded-md px-2 py-1"
-    //         value={selectedYear}
-    //         onChange={(e) => setSelectedYear(Number(e.target.value))}
-    //       >
-    //         {years.map((year) => (
-    //           <option key={year} value={year}>{year}</option>
-    //         ))}
-    //       </select>
-    //     </div>
-    //   </CardHeader>
-    //   <CardContent className="h-[500px] flex items-center justify-center">
-    //     {isLoading ? (
-    //       <div className="w-full h-full animate-pulse bg-gray-200 dark:bg-gray-700 rounded-md" />
-    //     ) : chartData.length > 0 ? (
-    //       <HighchartsReact
-    //         highcharts={Highcharts}
-    //         constructorType="stockChart"
-    //         options={options}
-    //       />
-    //     ) : (
-    //       <div className="text-center text-gray-500 dark:text-gray-400">
-    //         No data available for selected year
-    //       </div>
-    //     )}
-    //   </CardContent>
-    // </Card>
   )
 }
 export default NetBalanceChart

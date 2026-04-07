@@ -190,8 +190,8 @@ export const ExpenseTreeChart: React.FC<ExpenseTreeChart> = ({ years, currency }
 
     return (
         <Card className="shadow-lg border-0 bg-white dark:bg-gray-800 col-span-3">
-            <CardHeader className="flex justify-between lg:flex-row flex-col items-center gap-3">
-                <CardTitle className="text-md font-semibold text-gray-900 dark:text-gray-100">
+            <CardHeader className="flex justify-between lg:flex-row flex-col gap-3">
+                <CardTitle className="text-base font-semibold text-gray-900 dark:text-gray-100">
                     Yearly Credit & Debit Overview
                 </CardTitle>
 
@@ -224,13 +224,17 @@ export const ExpenseTreeChart: React.FC<ExpenseTreeChart> = ({ years, currency }
             </CardHeader>
 
             <CardContent>
-                <ReactECharts
-                    option={option}
-                    style={{ height: "850px", width: "100%" }}
-                    onChartReady={onChartReady}
-                />
+                <div className="w-full overflow-x-auto">
+                    <div className="min-w-[800px]">
+                        <ReactECharts
+                            option={option}
+                            style={{ height: "1000px", width: "100%" }}
+                            onChartReady={onChartReady}
+                        />
+                    </div>
+                </div>
             </CardContent>
-        </Card>
+        </Card >
     )
 }
 

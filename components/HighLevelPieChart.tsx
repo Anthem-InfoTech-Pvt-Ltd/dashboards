@@ -134,11 +134,13 @@ export const HighLevelPieChart: React.FC<HighLevelPieChart> = ({ years, currency
     ]
 
     return (
-        <Card className="shadow-lg border-0 bg-white dark:bg-gray-800 lg:col-span-2 col-span-1">
-            <CardHeader className="flex justify-between mb-14 flex-col lg:flex-row">
-                <CardTitle className="text-md font-semibold text-gray-800 dark:text-white">Expense Distribution</CardTitle>
+        <Card className="shadow-lg border-0 bg-white dark:bg-gray-800 lg:col-span-2 col-span-1 p-6">
+            <div className="flex justify-between items-center mb-14 flex-row lg:flex-row sm:flex-col">
+                <h2 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-2 lg:mb-0">
+                    Expense Distribution
+                </h2>
 
-                <div className="flex gap-2 flex-col lg:flex-row">
+                <div className="flex gap-2 flex-row">
                     <select
                         className="bg-gray-100 dark:bg-gray-700 border dark:border-gray-600 text-xs text-gray-800 dark:text-white rounded-md px-1 py-1"
                         value={selectedMonth}
@@ -159,7 +161,7 @@ export const HighLevelPieChart: React.FC<HighLevelPieChart> = ({ years, currency
                         ))}
                     </select>
                 </div>
-            </CardHeader>
+            </div>
 
             <CardContent>
                 <div className="h-[300px] flex items-center justify-center">

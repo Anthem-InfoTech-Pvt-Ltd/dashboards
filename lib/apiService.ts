@@ -233,26 +233,32 @@ export const apiService = {
     }
   },
 
-  async getYearlyCategoryExpenses(
-    groupId: string,
-    years: number[]
-  ): Promise<{
-    years: string[];
-    categories: string[];
-    data: { year: string;[category: string]: number }[];
-  }> {
-    try {
-      const res = await fetch(
-        `/api/yearly-category-expenses?groupId=${groupId}&years=${years.join(',')}`,
-        { cache: "no-store" }
-      );
-      if (!res.ok) throw new Error("Failed to fetch yearly category expenses");
-      return await res.json();
-    } catch (error) {
-      console.error("Error fetching yearly category expenses:", error);
+async getYearlyCategoryExpenses(
+  groupId: string,
+  years: number[]
+): Promise<{
+  years: string[];
+  categories: string[];
+  data: { year: string; [category: string]: number }[];
+}> {
+  try {
+    if (!groupId || !years || years.length === 0) {
       return { years: [], categories: [], data: [] };
     }
-  },
+
+    const res = await fetch(
+      `/api/yearly-category-expenses?groupId=${groupId}&years=${years.join(',')}`,
+      { cache: "no-store" }
+    );
+
+    if (!res.ok) throw new Error("Failed to fetch yearly category expenses");
+
+    return await res.json();
+  } catch (error) {
+    console.error("Error fetching yearly category expenses:", error);
+    return { years: [], categories: [], data: [] };
+  }
+},
 
   // Fetch available years dynamically from backend
   async getAvailableYears(groupId: string): Promise<number[]> {

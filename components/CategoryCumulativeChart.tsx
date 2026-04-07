@@ -233,7 +233,7 @@ export default function CategoryCumulativeChart({ years, selectedGlobalYear }: C
         <Card className="shadow-lg border-0 bg-white col-span-6 dark:bg-gray-800 lg:col-span-6">
             <CardHeader className="pb-2 flex justify-between flex-col lg:flex-row">
                 <div>
-                    <CardTitle className="text-gray-800 dark:text-white text-md"> Category Expense Trend</CardTitle>
+                    <CardTitle className="text-gray-800 dark:text-white text-base"> Category Expense Trend</CardTitle>
                 </div>
                 <div>
                     <select
@@ -257,7 +257,11 @@ export default function CategoryCumulativeChart({ years, selectedGlobalYear }: C
                         No data available for selected year.
                     </div>
                 ) : (
-                    <div id="cum-chart" style={{ width: "100%", height: "500px" }}></div>
+                    <div className="w-full overflow-x-auto">
+                        <div className="min-w-[750px]">
+                            <div id="cum-chart" style={{ width: "100%", height: "500px" }}></div>
+                        </div>
+                    </div>
                 )}
             </CardContent>
         </Card>

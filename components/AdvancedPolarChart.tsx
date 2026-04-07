@@ -518,7 +518,7 @@ const AdvancedPolarChart: React.FC<AdvancedPolarChart> = ({ years, selectedGloba
         <Card className="shadow-lg border-0 bg-white dark:bg-gray-800 col-span-5">
             <CardHeader className="pb-2 flex justify-between lg:flex-row flex-col">
                 <div>
-                    <CardTitle className="flex items-center gap-2 text-gray-800 dark:text-white text-md font-semibold">
+                    <CardTitle className="flex items-center gap-2 text-gray-800 dark:text-white text-base font-semibold">
                         Weekly Credit vs Debit
                     </CardTitle>
                 </div>
