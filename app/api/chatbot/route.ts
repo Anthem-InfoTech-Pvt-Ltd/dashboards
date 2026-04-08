@@ -12,56 +12,88 @@ export async function OPTIONS() {
 
 export async function POST(req: NextRequest) {
     try {
-        const { message } = await req.json();
+        const body = await req.json();
+        const { message, conversationHistory = [] } = body;
 
+        // ✅ Auth: pehle cookie check karo, phir userId from body
         const cookieStore = await cookies();
         const email = cookieStore.get("user_email")?.value?.trim();
 
-        if (!email) {
+        let userId: number | null = null;
+        let currency = "₹";
+
+        const pool = await sql.connect(config);
+
+        if (email) {
+            // Next.js app — cookie se user dhundo
+            const userResult = await pool.query`
+                SELECT UserId, Currency
+                FROM [dbo].[tblUsers]
+                WHERE EmailId = ${email}
+            `;
+            const user = userResult.recordset?.[0];
+            if (!user) {
+                return NextResponse.json(
+                    { error: "User not found" },
+                    { status: 404, headers: corsHeaders }
+                );
+            }
+            userId = user.UserId;
+            currency = user.Currency === "USD" ? "$" : "₹";
+
+        } else if (body.userId) {
+            // React app — userId directly from request body
+            userId = body.userId;
+
+            const userResult = await pool.query`
+                SELECT Currency
+                FROM [dbo].[tblUsers]
+                WHERE UserId = ${userId}
+            `;
+            const user = userResult.recordset?.[0];
+            if (user) {
+                currency = user.Currency === "USD" ? "$" : "₹";
+            }
+
+        } else {
             return NextResponse.json(
                 { error: "Not authenticated" },
                 { status: 401, headers: corsHeaders }
             );
         }
 
-        const pool = await sql.connect(config);
+        if (!message) {
+            return NextResponse.json(
+                { error: "Message is required" },
+                { status: 400, headers: corsHeaders }
+            );
+        }
 
-        const userResult = await pool.query`
-      SELECT UserId, Currency
-      FROM [dbo].[tblUsers]
-      WHERE EmailId = ${email}
-    `;
-
-        const user = userResult.recordset?.[0];
-        if (!user) throw new Error("User not found");
-
-        const userId = user.UserId;
-        const currency = user.Currency === "USD" ? "$" : "₹";
-
+        // ✅ Categories fetch
         const categoriesResult = await pool.query`
-      SELECT ExpensedescTypeID, ExpenseTypeName
-      FROM dbo.tbl_Exensedesctypes
-      WHERE UserId = ${userId} AND IsDeleted = 0
-    `;
-
+            SELECT ExpensedescTypeID, ExpenseTypeName
+            FROM dbo.tbl_Exensedesctypes
+            WHERE UserId = ${userId} AND IsDeleted = 0
+        `;
         const activeCategories = categoriesResult.recordset.map((c: any) => c.ExpenseTypeName.trim());
 
+        // ✅ Expenses fetch
         const result = await pool.query`
-      SELECT 
-        e.ExpenseId,
-        e.Expenses,
-        e.Description,
-        e.Date,
-        e.Balance,
-        e.ExpenseDescType,
-        et.Type AS ExpenseType
-      FROM [dbo].[tbl_Expenses] e
-      LEFT JOIN [dbo].[tbl_Expensetype] et 
-        ON e.ExpenseTypeId = et.ExpenseTypeId
-      WHERE e.UserId = ${userId} 
-        AND e.IsDeleted = 0
-      ORDER BY e.Date ASC
-    `;
+            SELECT 
+                e.ExpenseId,
+                e.Expenses,
+                e.Description,
+                e.Date,
+                e.Balance,
+                e.ExpenseDescType,
+                et.Type AS ExpenseType
+            FROM [dbo].[tbl_Expenses] e
+            LEFT JOIN [dbo].[tbl_Expensetype] et 
+                ON e.ExpenseTypeId = et.ExpenseTypeId
+            WHERE e.UserId = ${userId} 
+                AND e.IsDeleted = 0
+            ORDER BY e.Date ASC
+        `;
 
         const data = result.recordset;
 
@@ -72,20 +104,29 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // ✅ Server side se current date lo — bilkul accurate
         const now = new Date();
         const currentDate = now.toLocaleDateString("en-GB");
         const currentMonth = now.getMonth() + 1;
         const currentYear = now.getFullYear();
         const currentMonthName = now.toLocaleString("en-US", { month: "long" });
 
-        const summary = buildSummary(data, currency, activeCategories, currentMonth, currentYear, currentMonthName, currentDate);
-        const claudeReply = await callClaude(message, summary);
+        const summary = buildSummary(
+            data,
+            currency,
+            activeCategories,
+            currentMonth,
+            currentYear,
+            currentMonthName,
+            currentDate
+        );
+
+        const claudeReply = await callClaude(message, summary, conversationHistory);
 
         return NextResponse.json(
             { reply: claudeReply },
             { status: 200, headers: corsHeaders }
         );
+
     } catch (error) {
         console.error(error);
         return NextResponse.json(
@@ -107,7 +148,6 @@ function buildSummary(
     let totalCredit = 0;
     let totalDebit = 0;
 
-    // ✅ This month ka data
     const thisMonthData = data.filter((e) => {
         const d = new Date(e.Date);
         return d.getMonth() + 1 === currentMonth && d.getFullYear() === currentYear;
@@ -166,12 +206,15 @@ function buildSummary(
         )
         .join("\n");
 
-    const thisMonthLines = thisMonthData.length > 0
-        ? thisMonthData.map(
-            (e) =>
-                `- ${new Date(e.Date).toLocaleDateString("en-GB")}: ${currency}${Number(e.Expenses).toLocaleString()} | ${e.ExpenseType} | ${e.ExpenseDescType || e.Description}`
-        ).join("\n")
-        : `No transactions in ${currentMonthName} ${currentYear}.`;
+    const thisMonthLines =
+        thisMonthData.length > 0
+            ? thisMonthData
+                .map(
+                    (e) =>
+                        `- ${new Date(e.Date).toLocaleDateString("en-GB")}: ${currency}${Number(e.Expenses).toLocaleString()} | ${e.ExpenseType} | ${e.ExpenseDescType || e.Description}`
+                )
+                .join("\n")
+            : `No transactions in ${currentMonthName} ${currentYear}.`;
 
     return `
 === USER FINANCIAL DATA ===
@@ -228,7 +271,11 @@ ${categoryLines}
 `.trim();
 }
 
-async function callClaude(userMessage: string, summary: string): Promise<string> {
+async function callClaude(
+    userMessage: string,
+    summary: string,
+    conversationHistory: { role: string; content: string }[] = []
+): Promise<string> {
     const apiKey = process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
@@ -261,6 +308,14 @@ USER'S TRANSACTION DATA:
 ${summary}
 `.trim();
 
+    // ✅ Conversation history properly format karo
+    const messages = [
+        ...conversationHistory
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+        { role: "user" as const, content: userMessage },
+    ];
+
     const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -272,7 +327,7 @@ ${summary}
             model: "claude-sonnet-4-20250514",
             max_tokens: 1000,
             system: systemPrompt,
-            messages: [{ role: "user", content: userMessage }],
+            messages,
         }),
     });
 
