@@ -13,6 +13,21 @@ const QUICK_PROMPTS = [
 
 type Message = { role: "user" | "assistant"; content: string };
 
+// ✅ Markdown → HTML converter (only for assistant messages)
+function renderMarkdown(text: string): string {
+  return text
+    // Bold: **text** → <strong>
+    .replace(/\*\*(.+?)\*\*/g, '<strong style="font-weight:700">$1</strong>')
+    // Italic: *text* → <em>
+    .replace(/\*([^*]+?)\*/g, '<em>$1</em>')
+    // Numbered list: "1. text" → styled list item
+    .replace(/^(\d+)\.\s(.+)$/gm, '<div style="display:flex;gap:8px;margin:2px 0"><span style="color:#f97316;font-weight:700;min-width:16px">$1.</span><span>$2</span></div>')
+    // Bullet list: "- text" → styled bullet
+    .replace(/^[-•]\s(.+)$/gm, '<div style="display:flex;gap:8px;margin:2px 0"><span style="color:#64748b">•</span><span>$1</span></div>')
+    // Newlines → <br>
+    .replace(/\n/g, "<br/>");
+}
+
 export default function ExpenseChatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
@@ -103,21 +118,28 @@ export default function ExpenseChatbot() {
       {/* Floating Button */}
       <button
         onClick={() => setIsOpen((o) => !o)}
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-slate-700 text-white flex items-center justify-center shadow-xl hover:scale-105 transition z-50"
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-xl hover:scale-105 transition z-50"
       >
-        {isOpen ? "✕" : "💬"}
+        {isOpen ? (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x-icon lucide-x"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>) : (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-message-circle-more-icon lucide-message-circle-more"><path d="M2.992 16.342a2 2 0 0 1 .094 1.167l-1.065 3.29a1 1 0 0 0 1.236 1.168l3.413-.998a2 2 0 0 1 1.099.092 10 10 0 1 0-4.777-4.719" /><path d="M8 12h.01" /><path d="M12 12h.01" /><path d="M16 12h.01" /></svg>)}
       </button>
 
       {/* Chat Window */}
       {isOpen && (
         <div className="fixed bottom-24 right-6 w-[340px] max-h-[520px] flex flex-col bg-white rounded-2xl shadow-2xl border overflow-hidden z-40">
-          
+
           {/* Header */}
-          <div className="bg-slate-700 text-white px-4 py-3 flex items-center gap-2">
-            <div className="w-8 h-8 bg-orange-400 rounded-full flex items-center justify-center">
-              🤖
+          <div className="bg-blue-600 text-white px-4 py-3 flex items-center gap-2">
+            <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
+              <img src="/images/chatbot.webp" alt="Assistant" className="w-full h-full object-cover" />
             </div>
-            <span className="font-semibold text-sm">Expense Assistant</span>
+            <div className="flex flex-col">
+              <span className="font-semibold text-sm">Expense Assistant</span>
+
+              <div className="flex items-center gap-1 text-[10px]">
+                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                <span className="text-white/80">Online</span>
+              </div>
+            </div>
           </div>
 
           {/* Error */}
@@ -132,23 +154,28 @@ export default function ExpenseChatbot() {
             {messages.map((m, i) => (
               <div
                 key={i}
-                className={`flex ${
-                  m.role === "user" ? "justify-end" : "justify-start"
-                }`}
+                className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[80%] px-4 py-2 text-sm rounded-2xl ${
-                    m.role === "user"
-                      ? "bg-slate-700 text-white rounded-br-sm"
-                      : "bg-white border text-gray-800 rounded-bl-sm"
-                  }`}
+                  className={`max-w-[80%] px-4 py-2 text-sm rounded-2xl ${m.role === "user"
+                    ? "bg-blue-600 text-white rounded-br-sm"
+                    : "bg-white border text-gray-800 rounded-bl-sm"
+                    }`}
                 >
-                  {m.content}
+                  {m.role === "assistant" ? (
+                    // ✅ Assistant: render formatted HTML
+                    <span
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content) }}
+                    />
+                  ) : (
+                    // ✅ User: plain text (safe, no XSS risk)
+                    m.content
+                  )}
                 </div>
               </div>
             ))}
 
-            {/* Typing */}
+            {/* Typing indicator */}
             {loading && (
               <div className="flex justify-start">
                 <div className="bg-white border px-4 py-2 rounded-2xl flex gap-1">
@@ -162,14 +189,14 @@ export default function ExpenseChatbot() {
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick Prompts (HubSpot Style) */}
+          {/* Quick Prompts */}
           {showQuickPrompts && (
             <div className="px-4 pb-2 pt-2 bg-gray-50 border-t space-y-2">
               {QUICK_PROMPTS.map((p) => (
                 <button
                   key={p}
                   onClick={() => sendMessage(p)}
-                  className="w-full text-left border rounded-full px-4 py-2 text-sm hover:bg-gray-100 transition"
+                  className="w-fit text-left text-blue-500 border border-blue-500 rounded-full px-4 py-2 text-sm hover:bg-gray-100 transition"
                 >
                   {p}
                 </button>
