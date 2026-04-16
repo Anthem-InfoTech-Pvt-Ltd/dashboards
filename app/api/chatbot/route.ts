@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // ✅ Categories fetch
+        // ✅ Fetch Active Categories
         const categoriesResult = await pool.query`
             SELECT ExpensedescTypeID, ExpenseTypeName
             FROM dbo.tbl_Exensedesctypes
@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
         `;
         const activeCategories = categoriesResult.recordset.map((c: any) => c.ExpenseTypeName.trim());
 
-        // ✅ Expenses fetch
+        // ✅ Fetch All Expenses
         const result = await pool.query`
             SELECT 
                 e.ExpenseId,
@@ -110,7 +110,8 @@ export async function POST(req: NextRequest) {
         const currentYear = now.getFullYear();
         const currentMonthName = now.toLocaleString("en-US", { month: "long" });
 
-        const summary = buildSummary(
+        // Build both summaries
+        const humanReadableSummary = buildSummary(
             data,
             currency,
             activeCategories,
@@ -120,7 +121,14 @@ export async function POST(req: NextRequest) {
             currentDate
         );
 
-        const claudeReply = await callClaude(message, summary, conversationHistory);
+        const structuredDataJson = buildStructuredData(data, activeCategories, currency);
+
+        const claudeReply = await callClaude(
+            message, 
+            humanReadableSummary, 
+            structuredDataJson, 
+            conversationHistory
+        );
 
         return NextResponse.json(
             { reply: claudeReply },
@@ -128,7 +136,7 @@ export async function POST(req: NextRequest) {
         );
 
     } catch (error) {
-        console.error(error);
+        console.error("Chatbot Error:", error);
         return NextResponse.json(
             { error: "Internal Server Error" },
             { status: 500, headers: corsHeaders }
@@ -136,6 +144,7 @@ export async function POST(req: NextRequest) {
     }
 }
 
+// ==================== BUILD HUMAN-READABLE SUMMARY ====================
 function buildSummary(
     data: any[],
     currency: string,
@@ -271,44 +280,110 @@ ${categoryLines}
 `.trim();
 }
 
+// ==================== BUILD STRUCTURED DATA FOR AI (NEW) ====================
+function buildStructuredData(data: any[], activeCategories: string[], currency: string): string {
+    const yearsMap = new Map<number, any>();
+
+    data.forEach((e: any) => {
+        const date = new Date(e.Date);
+        const year = date.getFullYear();
+
+        if (!yearsMap.has(year)) {
+            yearsMap.set(year, {
+                year,
+                categories: [],
+                expenses: []
+            });
+        }
+
+        const yearObj = yearsMap.get(year)!;
+
+        const rawCat = (e.ExpenseDescType || e.Description || "Other").trim();
+        const categoryName = activeCategories.includes(rawCat) ? rawCat : "Other";
+
+        // Add category if not already present
+        if (!yearObj.categories.some((c: any) => c.categoryName === categoryName)) {
+            yearObj.categories.push({
+                categoryName,
+                type: e.ExpenseType === "Cr." ? "Cr" : "Dr"
+            });
+        }
+
+        yearObj.expenses.push({
+            expenseId: e.ExpenseId,
+            amount: Number(e.Expenses),
+            description: (e.Description || "").trim(),
+            category: categoryName,
+            type: e.ExpenseType === "Cr." ? "Cr" : "Dr",
+            date: date.toISOString().split("T")[0], // YYYY-MM-DD
+            balanceAfter: Number(e.Balance)
+        });
+    });
+
+    // Sort years descending + expenses by date inside each year
+    const years = Array.from(yearsMap.values())
+        .sort((a, b) => b.year - a.year)
+        .map((y) => {
+            y.expenses.sort((a: any, b: any) => 
+                new Date(a.date).getTime() - new Date(b.date).getTime()
+            );
+            return y;
+        });
+
+    const structured = {
+        currency,
+        totalTransactions: data.length,
+        years
+    };
+
+    return JSON.stringify(structured, null, 2);
+}
+
+// ==================== CALL CLAUDE ====================
 async function callClaude(
     userMessage: string,
-    summary: string,
+    humanReadableSummary: string,
+    structuredDataJson: string,
     conversationHistory: { role: string; content: string }[] = []
 ): Promise<string> {
     const apiKey = process.env.ANTHROPIC_API_KEY;
 
     if (!apiKey) {
-        console.error("ANTHROPIC_API_KEY is not set in environment variables");
+        console.error("ANTHROPIC_API_KEY is not set");
         throw new Error("API key not configured");
     }
 
     const systemPrompt = `
-You are a smart personal finance assistant.
-You have access to the user's complete transaction data provided below.
-Your job is to answer the user's question accurately using ONLY this data.
+You are a smart and precise personal finance assistant.
 
-RULES:
-1. **LANGUAGE RULE — MOST IMPORTANT:**
-   - Check the user's message script/language FIRST before doing anything else.
-   - If the message is written in English (Latin script, English words) → respond ONLY in English. No Hindi at all.
-   - If the message is written in Hindi (Devanagari script) or Hinglish (Hindi words in Latin script like "kitna", "mera", "kharcha") → respond in Hindi.
-   - The financial data in the summary is in English — that does NOT affect the response language. Only the USER'S message language matters.
-   - STRICTLY mirror the user's language. Never switch languages on your own.
-2. Use the EXACT numbers from the data. Never guess or make up values.
-3. Keep responses concise, clear, and well-formatted with relevant emojis.
-4. If the user asks something not covered by the data, politely say so.
-5. For greetings like "hi", "hello", "namaste", "hii" → respond friendly and list what you can help with.
-6. TODAY'S DATE and CURRENT MONTH are already provided in the data. 
-   When user says "this month", "is mahine", "aaj ka", "abhi" — use THIS MONTH SUMMARY section directly.
-   NEVER ask the user to clarify which month when they say "this month".
-7. Category names in the data: salary = salary/income, Tea = tea expenses, Help fundd / test fundd = fund categories, Trip = travel.
+<structured_financial_data>
+${structuredDataJson}
+</structured_financial_data>
 
-USER'S TRANSACTION DATA:
-${summary}
+<human_readable_summary>
+${humanReadableSummary}
+</human_readable_summary>
+
+RULES (Follow strictly):
+1. LANGUAGE RULE:
+   - If the user's message is in English → respond ONLY in English.
+   - If the user's message is in Hindi or Hinglish → respond in Hindi.
+   - Mirror the user's language exactly.
+
+2. Use ONLY the data provided above. Never guess amounts, dates, or balances.
+
+3. Be concise, clear, and helpful. Use relevant emojis.
+
+4. For "this month", "is mahine", "aaj", "abhi" — use the THIS MONTH SUMMARY section.
+
+5. Common category meanings:
+   - "salary" = Income / Salary
+   - "Tea" / "tea" = Tea expenses
+   - "Help fundd" = Help / Fund transfer
+
+Answer the user's question accurately using the provided data.
 `.trim();
 
-    // ✅ Conversation history properly format karo
     const messages = [
         ...conversationHistory
             .filter((m) => m.role === "user" || m.role === "assistant")
