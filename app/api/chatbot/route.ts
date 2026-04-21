@@ -15,7 +15,6 @@ export async function POST(req: NextRequest) {
         const body = await req.json();
         const { message, conversationHistory = [] } = body;
 
-        // ✅ Auth: pehle cookie check karo, phir userId from body
         const cookieStore = await cookies();
         const email = cookieStore.get("user_email")?.value?.trim();
 
@@ -25,7 +24,6 @@ export async function POST(req: NextRequest) {
         const pool = await sql.connect(config);
 
         if (email) {
-            // Next.js app — cookie se user dhundo
             const userResult = await pool.query`
                 SELECT UserId, Currency
                 FROM [dbo].[tblUsers]
@@ -42,18 +40,12 @@ export async function POST(req: NextRequest) {
             currency = user.Currency === "USD" ? "$" : "₹";
 
         } else if (body.userId) {
-            // React app — userId directly from request body
             userId = body.userId;
-
             const userResult = await pool.query`
-                SELECT Currency
-                FROM [dbo].[tblUsers]
-                WHERE UserId = ${userId}
+                SELECT Currency FROM [dbo].[tblUsers] WHERE UserId = ${userId}
             `;
             const user = userResult.recordset?.[0];
-            if (user) {
-                currency = user.Currency === "USD" ? "$" : "₹";
-            }
+            if (user) currency = user.Currency === "USD" ? "$" : "₹";
 
         } else {
             return NextResponse.json(
@@ -69,15 +61,15 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        // ✅ Fetch Active Categories
+        // Fetch Active Categories
         const categoriesResult = await pool.query`
-            SELECT ExpensedescTypeID, ExpenseTypeName
+            SELECT ExpenseTypeName
             FROM dbo.tbl_Exensedesctypes
             WHERE UserId = ${userId} AND IsDeleted = 0
         `;
         const activeCategories = categoriesResult.recordset.map((c: any) => c.ExpenseTypeName.trim());
 
-        // ✅ Fetch All Expenses
+        // Fetch All Expenses
         const result = await pool.query`
             SELECT 
                 e.ExpenseId,
@@ -110,8 +102,7 @@ export async function POST(req: NextRequest) {
         const currentYear = now.getFullYear();
         const currentMonthName = now.toLocaleString("en-US", { month: "long" });
 
-        // Build both summaries
-        const humanReadableSummary = buildSummary(
+        const summary = buildSummary(
             data,
             currency,
             activeCategories,
@@ -121,14 +112,7 @@ export async function POST(req: NextRequest) {
             currentDate
         );
 
-        const structuredDataJson = buildStructuredData(data, activeCategories, currency);
-
-        const claudeReply = await callClaude(
-            message, 
-            humanReadableSummary, 
-            structuredDataJson, 
-            conversationHistory
-        );
+        const claudeReply = await callClaude(message, summary, conversationHistory);
 
         return NextResponse.json(
             { reply: claudeReply },
@@ -144,7 +128,7 @@ export async function POST(req: NextRequest) {
     }
 }
 
-// ==================== BUILD HUMAN-READABLE SUMMARY ====================
+// ==================== BUILD SUMMARY ====================
 function buildSummary(
     data: any[],
     currency: string,
@@ -170,6 +154,7 @@ function buildSummary(
         else thisMonthDebit += amount;
     });
 
+    // Overall category map
     const categoryMap: Record<string, { credit: number; debit: number; count: number }> = {};
 
     data.forEach((e) => {
@@ -188,205 +173,119 @@ function buildSummary(
     });
 
     const balance = totalCredit - totalDebit;
-    const oldest = data[0];
     const newest = [...data].reverse()[0];
-    const highest = data.reduce((max, curr) =>
-        Number(curr.Expenses) > Number(max.Expenses) ? curr : max
-    );
-    const lowest = data.reduce((min, curr) =>
-        Number(curr.Expenses) < Number(min.Expenses) ? curr : min
-    );
     const latestBalance = newest?.Balance ?? balance;
 
+    // Recent 5 transactions (compact)
     const recent5 = [...data]
         .reverse()
         .slice(0, 5)
-        .map(
-            (e) =>
-                `- ${new Date(e.Date).toLocaleDateString("en-GB")}: ${currency}${Number(e.Expenses).toLocaleString()} | ${e.ExpenseType} | ${e.ExpenseDescType || e.Description}`
+        .map((e) =>
+            `${new Date(e.Date).toLocaleDateString("en-GB")} ${e.ExpenseType} ${currency}${Number(e.Expenses).toLocaleString()} [${e.ExpenseDescType || e.Description}]`
         )
         .join("\n");
 
+    // Overall category breakdown (compact)
     const categoryLines = Object.entries(categoryMap)
-        .sort((a, b) => (b[1].credit + b[1].debit) - (a[1].credit + a[1].debit))
-        .map(
-            ([cat, val]) =>
-                `- ${cat}: Credit ${currency}${val.credit.toLocaleString()}, Debit ${currency}${val.debit.toLocaleString()}, Count: ${val.count}`
+        .sort((a, b) => (b[1].debit + b[1].credit) - (a[1].debit + a[1].credit))
+        .map(([cat, val]) =>
+            `${cat}: Dr${currency}${val.debit.toLocaleString()} Cr${currency}${val.credit.toLocaleString()} (${val.count})`
         )
         .join("\n");
 
+    // This month transactions (compact)
     const thisMonthLines =
         thisMonthData.length > 0
             ? thisMonthData
-                .map(
-                    (e) =>
-                        `- ${new Date(e.Date).toLocaleDateString("en-GB")}: ${currency}${Number(e.Expenses).toLocaleString()} | ${e.ExpenseType} | ${e.ExpenseDescType || e.Description}`
+                .map((e) =>
+                    `${new Date(e.Date).toLocaleDateString("en-GB")} ${e.ExpenseType} ${currency}${Number(e.Expenses).toLocaleString()} [${e.ExpenseDescType || e.Description}]`
                 )
                 .join("\n")
             : `No transactions in ${currentMonthName} ${currentYear}.`;
 
-    return `
-=== USER FINANCIAL DATA ===
-Currency: ${currency}
-Total Transactions: ${data.length}
+    // ── MONTH × CATEGORY BREAKDOWN (compact format) ──
+    const monthCatMap: Record<string, Record<string, { dr: number; cr: number; count: number }>> = {};
 
-TODAY'S DATE: ${currentDate}
-CURRENT MONTH: ${currentMonthName} ${currentYear}
-
-THIS MONTH SUMMARY (${currentMonthName} ${currentYear}):
-- Total Credit This Month: ${currency}${thisMonthCredit.toLocaleString()}
-- Total Debit This Month: ${currency}${thisMonthDebit.toLocaleString()}
-- Net This Month: ${currency}${(thisMonthCredit - thisMonthDebit).toLocaleString()}
-- Transactions Count This Month: ${thisMonthData.length}
-
-THIS MONTH TRANSACTIONS:
-${thisMonthLines}
-
-OVERALL SUMMARY (All Time):
-- Total Credit: ${currency}${totalCredit.toLocaleString()}
-- Total Debit: ${currency}${totalDebit.toLocaleString()}
-- Net Balance (Cr - Dr): ${currency}${balance.toLocaleString()}
-- Latest Balance (from DB): ${currency}${Number(latestBalance).toLocaleString()}
-
-OLDEST TRANSACTION:
-- Date: ${new Date(oldest.Date).toLocaleDateString("en-GB")}
-- Amount: ${currency}${Number(oldest.Expenses).toLocaleString()}
-- Category: ${oldest.ExpenseDescType || oldest.Description}
-- Type: ${oldest.ExpenseType}
-
-LATEST TRANSACTION:
-- Date: ${new Date(newest.Date).toLocaleDateString("en-GB")}
-- Amount: ${currency}${Number(newest.Expenses).toLocaleString()}
-- Category: ${newest.ExpenseDescType || newest.Description}
-- Type: ${newest.ExpenseType}
-
-HIGHEST TRANSACTION:
-- Date: ${new Date(highest.Date).toLocaleDateString("en-GB")}
-- Amount: ${currency}${Number(highest.Expenses).toLocaleString()}
-- Category: ${highest.ExpenseDescType || highest.Description}
-- Type: ${highest.ExpenseType}
-
-LOWEST TRANSACTION:
-- Date: ${new Date(lowest.Date).toLocaleDateString("en-GB")}
-- Amount: ${currency}${Number(lowest.Expenses).toLocaleString()}
-- Category: ${lowest.ExpenseDescType || lowest.Description}
-- Type: ${lowest.ExpenseType}
-
-RECENT 5 TRANSACTIONS:
-${recent5}
-
-CATEGORY-WISE BREAKDOWN (All Time):
-${categoryLines}
-`.trim();
-}
-
-// ==================== BUILD STRUCTURED DATA FOR AI (NEW) ====================
-function buildStructuredData(data: any[], activeCategories: string[], currency: string): string {
-    const yearsMap = new Map<number, any>();
-
-    data.forEach((e: any) => {
-        const date = new Date(e.Date);
-        const year = date.getFullYear();
-
-        if (!yearsMap.has(year)) {
-            yearsMap.set(year, {
-                year,
-                categories: [],
-                expenses: []
-            });
-        }
-
-        const yearObj = yearsMap.get(year)!;
-
+    data.forEach((e) => {
+        const d = new Date(e.Date);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
         const rawCat = (e.ExpenseDescType || e.Description || "Other").trim();
-        const categoryName = activeCategories.includes(rawCat) ? rawCat : "Other";
+        const cat = activeCategories.includes(rawCat) ? rawCat : "Other";
+        const amount = Number(e.Expenses);
+        const isCredit = e.ExpenseType === "Cr.";
 
-        // Add category if not already present
-        if (!yearObj.categories.some((c: any) => c.categoryName === categoryName)) {
-            yearObj.categories.push({
-                categoryName,
-                type: e.ExpenseType === "Cr." ? "Cr" : "Dr"
-            });
-        }
+        if (!monthCatMap[key]) monthCatMap[key] = {};
+        if (!monthCatMap[key][cat]) monthCatMap[key][cat] = { dr: 0, cr: 0, count: 0 };
 
-        yearObj.expenses.push({
-            expenseId: e.ExpenseId,
-            amount: Number(e.Expenses),
-            description: (e.Description || "").trim(),
-            category: categoryName,
-            type: e.ExpenseType === "Cr." ? "Cr" : "Dr",
-            date: date.toISOString().split("T")[0], // YYYY-MM-DD
-            balanceAfter: Number(e.Balance)
-        });
+        if (isCredit) monthCatMap[key][cat].cr += amount;
+        else monthCatMap[key][cat].dr += amount;
+        monthCatMap[key][cat].count++;
     });
 
-    // Sort years descending + expenses by date inside each year
-    const years = Array.from(yearsMap.values())
-        .sort((a, b) => b.year - a.year)
-        .map((y) => {
-            y.expenses.sort((a: any, b: any) => 
-                new Date(a.date).getTime() - new Date(b.date).getTime()
-            );
-            return y;
-        });
+    // Format: "2024-03|Tea:Dr2890(6),Water:Dr440(2)"  — very compact to save tokens
+    const monthCatLines = Object.entries(monthCatMap)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, cats]) => {
+            const catStr = Object.entries(cats)
+                .filter(([, v]) => v.dr > 0 || v.cr > 0)
+                .sort((a, b) => (b[1].dr + b[1].cr) - (a[1].dr + a[1].cr))
+                .map(([cat, v]) => {
+                    const parts: string[] = [];
+                    if (v.dr > 0) parts.push(`Dr${v.dr}`);
+                    if (v.cr > 0) parts.push(`Cr${v.cr}`);
+                    return `${cat}:${parts.join("+")}(${v.count})`;
+                })
+                .join(",");
+            return `${key}|${catStr}`;
+        })
+        .join("\n");
 
-    const structured = {
-        currency,
-        totalTransactions: data.length,
-        years
-    };
+    return `
+DATE:${currentDate} CUR:${currency} TXNS:${data.length}
+BAL:${currency}${Number(latestBalance).toLocaleString()} TOTAL_CR:${currency}${totalCredit.toLocaleString()} TOTAL_DR:${currency}${totalDebit.toLocaleString()} NET:${currency}${balance.toLocaleString()}
 
-    return JSON.stringify(structured, null, 2);
+THIS_MONTH(${currentMonthName} ${currentYear}):
+CR:${currency}${thisMonthCredit.toLocaleString()} DR:${currency}${thisMonthDebit.toLocaleString()} NET:${currency}${(thisMonthCredit - thisMonthDebit).toLocaleString()} COUNT:${thisMonthData.length}
+${thisMonthLines}
+
+RECENT_5:
+${recent5}
+
+CATEGORY_TOTALS:
+${categoryLines}
+
+MONTH_CATEGORY(YYYY-MM|Cat:DrAmt+CrAmt(count)):
+${monthCatLines}
+`.trim();
 }
 
 // ==================== CALL CLAUDE ====================
 async function callClaude(
     userMessage: string,
-    humanReadableSummary: string,
-    structuredDataJson: string,
+    summary: string,
     conversationHistory: { role: string; content: string }[] = []
 ): Promise<string> {
     const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) throw new Error("API key not configured");
 
-    if (!apiKey) {
-        console.error("ANTHROPIC_API_KEY is not set");
-        throw new Error("API key not configured");
-    }
+    const systemPrompt = `You are a precise personal finance assistant with COMPLETE access to the user's transaction history.
 
-    const systemPrompt = `
-You are a smart and precise personal finance assistant.
+<data>
+${summary}
+</data>
 
-<structured_financial_data>
-${structuredDataJson}
-</structured_financial_data>
-
-<human_readable_summary>
-${humanReadableSummary}
-</human_readable_summary>
-
-RULES (Follow strictly):
-1. LANGUAGE RULE:
-   - If the user's message is in English → respond ONLY in English.
-   - If the user's message is in Hindi or Hinglish → respond in Hindi.
-   - Mirror the user's language exactly.
-
-2. Use ONLY the data provided above. Never guess amounts, dates, or balances.
-
-3. Be concise, clear, and helpful. Use relevant emojis.
-
-4. For "this month", "is mahine", "aaj", "abhi" — use the THIS MONTH SUMMARY section.
-
-5. Common category meanings:
-   - "salary" = Income / Salary
-   - "Tea" / "tea" = Tea expenses
-   - "Help fundd" = Help / Fund transfer
-
-Answer the user's question accurately using the provided data.
-`.trim();
+RULES:
+1. LANGUAGE: Mirror user — English→English, Hindi/Hinglish→Hindi.
+2. You have ALL data for ALL months and categories. NEVER say data is unavailable.
+3. For month-wise category queries (e.g. "highest tea month"), scan MONTH_CATEGORY rows, find that category's Dr amount per month, return the highest.
+4. MONTH_CATEGORY format: YYYY-MM|Category:DrAmount+CrAmount(count)
+5. For "this month/is mahine" use THIS_MONTH section.
+6. Be concise, use emojis. Category hints: salary=Income, Tea=Tea expense.`;
 
     const messages = [
         ...conversationHistory
             .filter((m) => m.role === "user" || m.role === "assistant")
+            .slice(-8) // keep last 8 messages only
             .map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
         { role: "user" as const, content: userMessage },
     ];
@@ -399,8 +298,8 @@ Answer the user's question accurately using the provided data.
             "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 1000,
+            model: "claude-haiku-4-5-20251001",
+            max_tokens: 800,
             system: systemPrompt,
             messages,
         }),
@@ -414,11 +313,10 @@ Answer the user's question accurately using the provided data.
 
     const claudeData = await response.json();
 
-    const reply =
+    return (
         claudeData?.content
             ?.filter((block: any) => block.type === "text")
             .map((block: any) => block.text)
-            .join("\n") || "Sorry, I couldn't process your request.";
-
-    return reply;
+            .join("\n") || "Sorry, I couldn't process your request."
+    );
 }
