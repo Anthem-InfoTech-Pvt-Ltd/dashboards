@@ -247,18 +247,25 @@ function detectAutoChartIntent(message: string): string | null {
     }
 
     // ── PRIORITY 2 — Yearly credit+debit day-wise chart ──
-    // Triggers: "2025 credit debit", "saal bhar credit debit", "yearly credit vs debit chart",
-    //           "poore saal ka credit aur debit", "annual credit debit", "2025 ka sara credit debit"
-    //           "show me credit and debit for 2025", "20XX credit debit dikhao"
-    if (/(20\d{2})\s*(ka\s*)?(sara\s*)?(credit|debit|transactions?)/i.test(msg)) return "daywise";
-    if (/yearly\s*(credit|debit)\s*(vs|aur|and|chart|graph|dikhao)/i.test(msg)) return "daywise";
-    if (/(credit|debit)\s*(vs|aur|and)\s*(credit|debit)\s*(yearly|saal|annual|poore?\s*saal)/i.test(msg)) return "daywise";
-    if (/saal[\s-]?bhar\s*(ka\s*)?(credit|debit|transactions?)/i.test(msg)) return "daywise";
-    if (/poore?\s*saal\s*(ka\s*)?(credit|debit|transactions?)/i.test(msg)) return "daywise";
-    if (/annual\s*(credit|debit)\s*(vs|and|aur|chart|data|summary)/i.test(msg)) return "daywise";
-    if (/(credit|debit)\s*(aur|and|vs)\s*(debit|credit)\s*(20\d{2}|saal|year|yearly|annual)/i.test(msg)) return "daywise";
-    if (/all\s*(credit|debit)\s*(of|in|for)\s*(20\d{2}|this\s*year|current\s*year)/i.test(msg)) return "daywise";
-    if (/(20\d{2})\s*(mein|me|ka|ke)\s*(sare|sara|all|poore?)\s*(credit|debit|transactions?)/i.test(msg)) return "daywise";
+    // Triggers: "2025 credit debit", "all credit debits of 2025", "saal bhar credit debit",
+    //           "yearly credit vs debit chart", "poore saal ka credit aur debit",
+    //           "annual credit debit", "2025 ka sara credit debit", "show me credit and debit for 2025"
+    // NOTE: credits/debits (plural) are intentionally matched with s? suffix everywhere
+    if (/(20\d{2})\s*(ka\s*)?(sara\s*)?(credits?|debits?|transactions?)/i.test(msg)) return "daywise";
+    if (/yearly\s*(credits?|debits?)\s*(vs|aur|and|chart|graph|dikhao)/i.test(msg)) return "daywise";
+    if (/(credits?|debits?)\s*(vs|aur|and)\s*(credits?|debits?)\s*(yearly|saal|annual|poore?\s*saal)/i.test(msg)) return "daywise";
+    if (/saal[\s-]?bhar\s*(ka\s*)?(credits?|debits?|transactions?)/i.test(msg)) return "daywise";
+    if (/poore?\s*saal\s*(ka\s*)?(credits?|debits?|transactions?)/i.test(msg)) return "daywise";
+    if (/annual\s*(credits?|debits?)\s*(vs|and|aur|chart|data|summary)/i.test(msg)) return "daywise";
+    if (/(credits?|debits?)\s*(aur|and|vs)\s*(debits?|credits?)\s*(20\d{2}|saal|year|yearly|annual)/i.test(msg)) return "daywise";
+    if (/all\s*(credits?|debits?)\s*(of|in|for)\s*(20\d{2}|this\s*year|current\s*year)/i.test(msg)) return "daywise";
+    if (/(20\d{2})\s*(mein|me|ka|ke)\s*(sare|sara|all|poore?)\s*(credits?|debits?|transactions?)/i.test(msg)) return "daywise";
+    // "all credit debits of 2025" — "credit debits" together near a year
+    if (/(credits?\s+debits?|debits?\s+credits?)\s*(of|in|for|20\d{2})/i.test(msg)) return "daywise";
+    if (/(of|in|for|show)\s*(20\d{2})\s*(credits?\s*[&and]*\s*debits?|debits?\s*[&and]*\s*credits?)/i.test(msg)) return "daywise";
+    // "show credit and debit for 2025", "show me credits and debits of 2025"
+    if (/(show|dikhao|dekho|show\s*me)\s*(me\s*)?(credits?\s*(and|aur|&)\s*debits?|debits?\s*(and|aur|&)\s*credits?)/i.test(msg)) return "daywise";
+    if (/(credits?\s*(and|aur|&)\s*debits?|debits?\s*(and|aur|&)\s*credits?)\s*(of|in|for|20\d{2})/i.test(msg)) return "daywise";
 
     // ── PRIORITY 3 — Yearly stacked bar (year × category, ALL TIME) ──
     if (/yearly\s*(debit|expense|kharch)\s*(by\s*)?categor/i.test(msg)) return "yearlyStackedBar";
@@ -284,9 +291,12 @@ function detectAutoChartIntent(message: string): string | null {
     if (/monthly\s*category\s*(breakdown|split|detail)|category\s*wise\s*monthly/i.test(msg)) return "stackedBar";
 
     // ── PRIORITY 7 — Credit vs Debit Pie ──
-    if (/(credit|income|aay)\s*(vs|versus|aur|and|compared\s*to)\s*(debit|expense|kharch)/i.test(msg)) return "creditDebitPie";
-    if (/(debit|expense|kharch)\s*(vs|versus|aur|and|compared\s*to)\s*(credit|income|aay)/i.test(msg)) return "creditDebitPie";
-    if (/overall\s*(credit|debit)\s*(vs|split|ratio|percentage)/i.test(msg)) return "creditDebitPie";
+    // Guard: skip if a year / yearly keyword is present (those are handled by Priority 2 → daywise)
+    if (!/20\d{2}|saal[\s-]?bhar|poore?\s*saal|yearly|annual/i.test(msg)) {
+        if (/(credit|income|aay)\s*(vs|versus|aur|and|compared\s*to)\s*(debit|expense|kharch)/i.test(msg)) return "creditDebitPie";
+        if (/(debit|expense|kharch)\s*(vs|versus|aur|and|compared\s*to)\s*(credit|income|aay)/i.test(msg)) return "creditDebitPie";
+        if (/overall\s*(credit|debit)\s*(vs|split|ratio|percentage)/i.test(msg)) return "creditDebitPie";
+    }
 
     // ── PRIORITY 8 — Pie (this-month category) ──
     if (/this\s*month.*categor|is\s*mahine.*categor|categor.*this\s*month|categor.*is\s*mahine/i.test(msg)) return "pie";
