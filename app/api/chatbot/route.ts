@@ -155,12 +155,11 @@ function extractYearFromMessage(message: string, defaultYear: number): number {
 }
 
 // ==================== EXPLICIT CHART INTENT ====================
-// Only triggered when user DIRECTLY asks for a specific chart type
 function detectExplicitChartIntent(message: string): string | null {
     const msg = message.toLowerCase();
 
     // Daywise — must mention day/daily + chart context
-    if (/day[\s-]?wise|daywise|daily[\s-]?chart|daily[\s-]?trend|din[\s-]?ke[\s-]?hisab|rozana[\s-]?chart|per[\s-]?day[\s-]?chart|full[\s-]?year.*day.*chart|day.*full[\s-]?year.*chart/i.test(msg)) {
+    if (/day[\s-]?wise|daywise|daily[\s-]?chart|daily[\s-]?trend|din[\s-]?ke[\s-]?hisab|rozana[\s-]?chart|per[\s-]?day[\s-]?chart/i.test(msg)) {
         return "daywise";
     }
 
@@ -174,22 +173,22 @@ function detectExplicitChartIntent(message: string): string | null {
         return "radar";
     }
 
-    // Stacked bar — explicit
+    // Stacked bar (vertical, monthly) — explicit
     if (/stacked[\s-]?bar|stack[\s-]?chart|stacked[\s-]?chart/i.test(msg)) {
         return "stackedBar";
     }
 
-    // Donut — explicit (before pie so "donut" doesn't fall into pie)
+    // Donut — explicit
     if (/donut[\s-]?chart|doughnut[\s-]?chart/i.test(msg)) {
         return "donut";
     }
 
-    // Pie — explicit (typo tolerant: pia = pie)
+    // Pie — explicit
     if (/\bp[iea]{1,3}\s*chart\b|pie[\s-]?chart/i.test(msg)) {
         return "pie";
     }
 
-    // Credit vs Debit pie — specific combination
+    // Credit vs Debit pie
     if (/(credit.*debit|debit.*credit)/i.test(msg) && /chart|graph|visual|pie|dikhao/i.test(msg)) {
         return "creditDebitPie";
     }
@@ -199,7 +198,12 @@ function detectExplicitChartIntent(message: string): string | null {
         return "horizontalBar";
     }
 
-    // Bar chart — explicit (must say "bar chart" not just "bar")
+    // ── NEW: Yearly stacked bar (year × category horizontal) — explicit ──
+    if (/yearly[\s-]?debit[\s-]?by[\s-]?categor|year[\s-]?wise[\s-]?categor[\s-]?chart|categor[\s-]?year[\s-]?wise[\s-]?chart/i.test(msg)) {
+        return "yearlyStackedBar";
+    }
+
+    // Bar chart — explicit
     if (/bar[\s-]?chart|column[\s-]?chart|bar[\s-]?graph/i.test(msg)) {
         return "bar";
     }
@@ -214,23 +218,14 @@ function detectExplicitChartIntent(message: string): string | null {
         return "line";
     }
 
-    // Generic "show chart/graph/visualize" — NO default to bar anymore
-    // Instead return null and let auto-chart decide based on actual intent
-    // REMOVED: generic /\bchart\b/ → "bar" fallback
-
     return null;
 }
 
 // ==================== AUTO CHART INTENT ====================
-// Smart chart injection based on ACTUAL question intent — not just keywords
-// Rules:
-//   - NO chart for: balance, recent txns, single-value answers, greetings
-//   - YES chart when multi-dimensional data would genuinely help
-//   - Chart type chosen based on what data shape the question asks for
 function detectAutoChartIntent(message: string): string | null {
     const msg = message.toLowerCase();
 
-    // ── BLOCK LIST: never add chart ──
+    // ── BLOCK LIST ──
     const noChartPatterns = [
         /\bbalance\b|\bbaaki\b|\bbakaya\b/,
         /recent|latest|last\s+\d*\s*transaction|aakhri|pichhla\s*transaction/,
@@ -240,74 +235,76 @@ function detectAutoChartIntent(message: string): string | null {
         /\bhelp\b.*\bkya\b|\bkya\b.*\bpuchh\b/,
         /which\s*app|konsa\s*app|is app|app\s*feature/,
         /what is|kya hai|define|explain|matlab/,
-        // single-value questions — don't chart these
         /total\s*(credit|debit|income|expense|kharch)\s*kitna|kitna\s*(credit|debit|income|kharch)\s*total/,
         /aaj\s*(ka|kitna)|today's?\s*(expense|balance|total)/,
-        // "last transaction" or "latest entry"
         /last\s*entry|latest\s*entry|last\s*added/,
     ];
     if (noChartPatterns.some(p => p.test(msg))) return null;
 
-    // ── PRIORITY 1 — Day-wise (full year daily view) ──
+    // ── PRIORITY 1 — Day-wise ──
     if (/day[\s-]?wise|daywise|rozana\s*data|daily\s*data|har\s*roz\s*(ka\s*)?(data|kharch)/i.test(msg)) {
         return "daywise";
     }
 
-    // ── PRIORITY 2 — Tree chart (category hierarchy, all-time) ──
+    // ── PRIORITY 2 — Yearly stacked bar (year × category, ALL TIME) ──
+    // Triggers: "yearly debit by category", "year wise category", "all time category by year",
+    //           "saal ke hisab se category", "category year wise", "har saal category breakdown"
+    if (/yearly\s*(debit|expense|kharch)\s*(by\s*)?categor/i.test(msg)) return "yearlyStackedBar";
+    if (/year[\s-]?wise\s*(debit|expense|kharch)?\s*categor|categor.*year[\s-]?wise/i.test(msg)) return "yearlyStackedBar";
+    if (/all[\s-]?time\s*(category|categor|kharch)\s*(by\s*)?year|categor.*all[\s-]?time.*year/i.test(msg)) return "yearlyStackedBar";
+    if (/har\s*saal\s*(ki\s*)?(category|categor|kharch)|saal[\s-]?ke[\s-]?hisab\s*(se\s*)?(categor|kharch)/i.test(msg)) return "yearlyStackedBar";
+    if (/poore?\s*(time|samay|data)\s*(mein\s*)?(categor|kharch)|categor.*poore?\s*(time|samay)/i.test(msg)) return "yearlyStackedBar";
+    if (/(category|categor)\s*(breakdown|split)\s*(by\s*)?year|(year|saal)\s*(wise\s*)?(category|categor)\s*(breakdown|split)/i.test(msg)) return "yearlyStackedBar";
+
+    // ── PRIORITY 3 — Tree chart ──
     if (/category\s*(hierarchy|tree|breakdown\s*all|split\s*all)|all\s*time\s*category|sabhi\s*categor/i.test(msg)) {
         return "tree";
     }
 
-    // ── PRIORITY 3 — Radar (month vs month, two-period comparison by category) ──
+    // ── PRIORITY 4 — Radar ──
     if (/(last|pichhl[ae])\s*month.*(vs|versus|compare|aur).*(this|is|current)\s*month/i.test(msg)) return "radar";
     if (/(this|is|current)\s*month.*(vs|versus|compare|aur).*(last|pichhl[ae])\s*month/i.test(msg)) return "radar";
-    if (/monthly\s*(credit|debit)\s*(vs|versus|aur|and)\s*(credit|debit)|credit\s*debit\s*monthly\s*compar/i.test(msg)) return "radar";
+    if (/monthly\s*(credit|debit)\s*(vs|versus|aur|and)\s*(credit|debit)/i.test(msg)) return "radar";
     if (/(last|pichhl[ae])\s*month\s*(vs|compare|aur)\s*(this|current|is)\s*month/i.test(msg)) return "radar";
 
-    // ── PRIORITY 4 — Stacked bar (category × month matrix) ──
+    // ── PRIORITY 5 — Stacked bar (category × month matrix) ──
     if (/category\s*month[\s-]?wise|month[\s-]?wise\s*category|categor.*har\s*mahine|har\s*mahine.*categor/i.test(msg)) return "stackedBar";
     if (/monthly\s*category\s*(breakdown|split|detail)|category\s*wise\s*monthly/i.test(msg)) return "stackedBar";
 
-    // ── PRIORITY 5 — Credit vs Debit Pie (overall credit/debit split) ──
+    // ── PRIORITY 6 — Credit vs Debit Pie ──
     if (/(credit|income|aay)\s*(vs|versus|aur|and|compared\s*to)\s*(debit|expense|kharch)/i.test(msg)) return "creditDebitPie";
     if (/(debit|expense|kharch)\s*(vs|versus|aur|and|compared\s*to)\s*(credit|income|aay)/i.test(msg)) return "creditDebitPie";
     if (/overall\s*(credit|debit)\s*(vs|split|ratio|percentage)/i.test(msg)) return "creditDebitPie";
 
-    // ── PRIORITY 6 — Pie (this-month category breakdown) ──
+    // ── PRIORITY 7 — Pie (this-month category) ──
     if (/this\s*month.*categor|is\s*mahine.*categor|categor.*this\s*month|categor.*is\s*mahine/i.test(msg)) return "pie";
     if (/monthly\s*expense\s*distribution|mahine\s*ka\s*share|is\s*mahine\s*ka\s*breakdown/i.test(msg)) return "pie";
     if (/category\s*(breakdown|split|distribution|wise)\s*(this|current|is)?\s*month/i.test(msg)) return "pie";
 
-    // ── PRIORITY 7 — Horizontal bar (top/highest categories ranking) ──
+    // ── PRIORITY 8 — Horizontal bar (top categories) ──
     if (/top\s*\d*\s*(categor|expense|kharch|spending)/i.test(msg)) return "horizontalBar";
     if (/sabse\s*zyada\s*(kharch|expense)|highest\s*(spend|expense)|maximum\s*(spend|expense)/i.test(msg)) return "horizontalBar";
-    if (/kitna\s*kharch.*categor|categor.*kitna\s*kharch/i.test(msg)) return "horizontalBar";
     if (/ranking\s*(of\s*)?(categor|expense)|categor.*rank/i.test(msg)) return "horizontalBar";
     if (/overall\s*(spend|expense|kharch)\s*(by\s*)?categor|total\s*categor.*all\s*time/i.test(msg)) return "horizontalBar";
 
-    // ── PRIORITY 8 — Area (full-year trend / cumulative) ──
+    // ── PRIORITY 9 — Area (full-year trend) ──
     if (/full[\s-]?year\s*(expense|kharch|spend|data|summary|trend)/i.test(msg)) return "area";
     if (/annual\s*(expense|kharch|spend|summary|breakdown|trend)/i.test(msg)) return "area";
     if (/saal[\s-]?bhar\s*(ka\s*)?(kharch|expense)/i.test(msg)) return "area";
     if (/poore\s*saal\s*(ka\s*)?(kharch|expense)/i.test(msg)) return "area";
     if (/(expense|kharch|spend)\s*(of|in|for)\s*20\d{2}/i.test(msg) && !/month/i.test(msg)) return "area";
-    if (/20\d{2}\s*(ka\s*)?(poora|full|complete|sab|all)\s*(kharch|expense|spend)/i.test(msg)) return "area";
 
-    // ── PRIORITY 9 — Line (trend / pattern over time) ──
+    // ── PRIORITY 10 — Line (trend) ──
     if (/trend|spending\s*pattern|expense\s*pattern/i.test(msg)) return "line";
-    if (/badhna|ghatna|zyada\s*ho\s*raha|kam\s*ho\s*raha|kitna\s*badh/i.test(msg)) return "line";
     if (/over\s*time|time\s*series|month\s*over\s*month/i.test(msg)) return "line";
 
-    // ── PRIORITY 10 — Bar (monthly debit/credit comparison — only when clearly multi-month) ──
-    // Must explicitly ask for monthly breakdown — NOT just any spending question
+    // ── PRIORITY 11 — Bar (monthly breakdown) ──
     if (/month[\s-]?wise\s*(expense|kharch|spend|breakdown|summary|report)/i.test(msg)) return "bar";
     if (/monthly\s*(expense|kharch|spend)\s*(breakdown|summary|report|comparison)/i.test(msg)) return "bar";
     if (/har\s*mahine\s*(ka\s*)?(kharch|expense|total)/i.test(msg)) return "bar";
     if (/mahine\s*ke\s*hisab\s*(se\s*)?(kharch|expense)/i.test(msg)) return "bar";
     if (/year(ly)?\s*(overview|summary|expense|breakdown)\s*(by\s*month|monthly)?/i.test(msg) && !/full/i.test(msg)) return "bar";
-    if (/sal\s*bhar.*monthly|monthly.*sal\s*bhar/i.test(msg)) return "bar";
 
-    // ── DO NOT add generic fallback to "bar" — if nothing matched, return null ──
     return null;
 }
 
@@ -438,7 +435,7 @@ function buildChartData(
             };
         }
 
-        // ── Stacked bar ──
+        // ── Stacked bar (monthly × category) ──
         case "stackedBar": {
             const yearCatMonthMap: Record<string, Record<string, number>> = {};
             data.forEach((e) => {
@@ -460,6 +457,42 @@ function buildChartData(
                 datasets: cats.map((cat) => ({
                     label: cat,
                     data: sortedMonths.map((m) => Math.round(yearCatMonthMap[cat][m] || 0)),
+                })),
+            };
+        }
+
+        // ── NEW: Yearly Stacked Bar (year × category, ALL TIME, horizontal) ──
+        case "yearlyStackedBar": {
+            // Build year × category map across ALL data
+            const yearCatMap: Record<string, Record<string, number>> = {};
+            data.forEach((e) => {
+                if (e.ExpenseType === "Cr.") return; // debits only
+                const d = new Date(e.Date);
+                const yr = String(d.getFullYear());
+                const rawCat = (e.ExpenseDescType || e.Description || "Other").trim();
+                const cat = activeCategories.includes(rawCat) ? rawCat : "Other";
+                if (!yearCatMap[yr]) yearCatMap[yr] = {};
+                yearCatMap[yr][cat] = (yearCatMap[yr][cat] || 0) + Number(e.Expenses);
+            });
+
+            const years = Object.keys(yearCatMap).sort(); // ascending
+            if (!years.length) return null;
+
+            // Collect all unique categories across all years, sorted by all-time total descending
+            const allCats = Object.entries(allCategoryMap)
+                .sort((a, b) => b[1] - a[1])
+                .map(([cat]) => cat);
+
+            if (!allCats.length) return null;
+
+            return {
+                type: "yearlyStackedBar",
+                title: `Yearly Debit by Category — All Time`,
+                currency,
+                labels: years,           // Y-axis: years
+                datasets: allCats.map((cat) => ({
+                    label: cat,
+                    data: years.map((yr) => Math.round(yearCatMap[yr]?.[cat] || 0)),
                 })),
             };
         }
