@@ -103,19 +103,35 @@ export async function POST(req: NextRequest) {
         const currentMonthName = now.toLocaleString("en-US", { month: "long" });
 
         const summary = buildSummary(
-            data,
-            currency,
-            activeCategories,
-            currentMonth,
-            currentYear,
-            currentMonthName,
-            currentDate
+            data, currency, activeCategories,
+            currentMonth, currentYear, currentMonthName, currentDate
         );
 
-        const claudeReply = await callClaude(message, summary, conversationHistory);
+        // ── Step 1: Explicit chart request by user ──
+        const explicitChartType = detectExplicitChartIntent(message);
+
+        // ── Step 2: Smart auto-chart for meaningful questions (no explicit request) ──
+        const autoChartType = explicitChartType ? null : detectAutoChartIntent(message);
+
+        const chartType = explicitChartType ?? autoChartType;
+        let chartData: object | undefined = undefined;
+
+        if (chartType) {
+            const targetYear = extractYearFromMessage(message, currentYear);
+            const built = buildChartData(
+                chartType, data, activeCategories, currency,
+                currentMonth, targetYear, currentMonthName
+            );
+            if (built) chartData = built;
+        }
+
+        const claudeReply = await callClaude(message, summary, conversationHistory, !!chartData);
 
         return NextResponse.json(
-            { reply: claudeReply },
+            {
+                reply: claudeReply,
+                ...(chartData ? { chartData } : {}),
+            },
             { status: 200, headers: corsHeaders }
         );
 
@@ -128,15 +144,422 @@ export async function POST(req: NextRequest) {
     }
 }
 
+// ==================== EXTRACT YEAR ====================
+function extractYearFromMessage(message: string, defaultYear: number): number {
+    const match = message.match(/\b(20\d{2})\b/);
+    if (match) {
+        const yr = parseInt(match[1], 10);
+        if (yr >= 2000 && yr <= 2099) return yr;
+    }
+    return defaultYear;
+}
+
+// ==================== EXPLICIT CHART INTENT ====================
+// Only triggered when user DIRECTLY asks for a specific chart type
+function detectExplicitChartIntent(message: string): string | null {
+    const msg = message.toLowerCase();
+
+    // Daywise — must mention day/daily + chart context
+    if (/day[\s-]?wise|daywise|daily[\s-]?chart|daily[\s-]?trend|din[\s-]?ke[\s-]?hisab|rozana[\s-]?chart|per[\s-]?day[\s-]?chart|full[\s-]?year.*day.*chart|day.*full[\s-]?year.*chart/i.test(msg)) {
+        return "daywise";
+    }
+
+    // Tree chart — explicit
+    if (/tree[\s-]?chart|tree[\s-]?map|treemap|hierarchy[\s-]?chart|category[\s-]?tree|ped[\s-]?chart|tree[\s-]?dikhao|tree[\s-]?graph/i.test(msg)) {
+        return "tree";
+    }
+
+    // Radar / Spider — explicit
+    if (/radar[\s-]?chart|radar[\s-]?graph|spider[\s-]?chart|web[\s-]?chart/i.test(msg)) {
+        return "radar";
+    }
+
+    // Stacked bar — explicit
+    if (/stacked[\s-]?bar|stack[\s-]?chart|stacked[\s-]?chart/i.test(msg)) {
+        return "stackedBar";
+    }
+
+    // Donut — explicit (before pie so "donut" doesn't fall into pie)
+    if (/donut[\s-]?chart|doughnut[\s-]?chart/i.test(msg)) {
+        return "donut";
+    }
+
+    // Pie — explicit (typo tolerant: pia = pie)
+    if (/\bp[iea]{1,3}\s*chart\b|pie[\s-]?chart/i.test(msg)) {
+        return "pie";
+    }
+
+    // Credit vs Debit pie — specific combination
+    if (/(credit.*debit|debit.*credit)/i.test(msg) && /chart|graph|visual|pie|dikhao/i.test(msg)) {
+        return "creditDebitPie";
+    }
+
+    // Horizontal bar — explicit
+    if (/horizontal[\s-]?bar[\s-]?chart|hbar[\s-]?chart/i.test(msg)) {
+        return "horizontalBar";
+    }
+
+    // Bar chart — explicit (must say "bar chart" not just "bar")
+    if (/bar[\s-]?chart|column[\s-]?chart|bar[\s-]?graph/i.test(msg)) {
+        return "bar";
+    }
+
+    // Area chart — explicit
+    if (/area[\s-]?chart|filled[\s-]?line[\s-]?chart/i.test(msg)) {
+        return "area";
+    }
+
+    // Line chart — explicit
+    if (/line[\s-]?chart|line[\s-]?graph/i.test(msg)) {
+        return "line";
+    }
+
+    // Generic "show chart/graph/visualize" — NO default to bar anymore
+    // Instead return null and let auto-chart decide based on actual intent
+    // REMOVED: generic /\bchart\b/ → "bar" fallback
+
+    return null;
+}
+
+// ==================== AUTO CHART INTENT ====================
+// Smart chart injection based on ACTUAL question intent — not just keywords
+// Rules:
+//   - NO chart for: balance, recent txns, single-value answers, greetings
+//   - YES chart when multi-dimensional data would genuinely help
+//   - Chart type chosen based on what data shape the question asks for
+function detectAutoChartIntent(message: string): string | null {
+    const msg = message.toLowerCase();
+
+    // ── BLOCK LIST: never add chart ──
+    const noChartPatterns = [
+        /\bbalance\b|\bbaaki\b|\bbakaya\b/,
+        /recent|latest|last\s+\d*\s*transaction|aakhri|pichhla\s*transaction/,
+        /how many|kitne\s*transaction|count\s*transaction/,
+        /^(hi|hello|hey|namaste|hii|helo|hola)\b/,
+        /thank|shukriya|dhanyawad/,
+        /\bhelp\b.*\bkya\b|\bkya\b.*\bpuchh\b/,
+        /which\s*app|konsa\s*app|is app|app\s*feature/,
+        /what is|kya hai|define|explain|matlab/,
+        // single-value questions — don't chart these
+        /total\s*(credit|debit|income|expense|kharch)\s*kitna|kitna\s*(credit|debit|income|kharch)\s*total/,
+        /aaj\s*(ka|kitna)|today's?\s*(expense|balance|total)/,
+        // "last transaction" or "latest entry"
+        /last\s*entry|latest\s*entry|last\s*added/,
+    ];
+    if (noChartPatterns.some(p => p.test(msg))) return null;
+
+    // ── PRIORITY 1 — Day-wise (full year daily view) ──
+    if (/day[\s-]?wise|daywise|rozana\s*data|daily\s*data|har\s*roz\s*(ka\s*)?(data|kharch)/i.test(msg)) {
+        return "daywise";
+    }
+
+    // ── PRIORITY 2 — Tree chart (category hierarchy, all-time) ──
+    if (/category\s*(hierarchy|tree|breakdown\s*all|split\s*all)|all\s*time\s*category|sabhi\s*categor/i.test(msg)) {
+        return "tree";
+    }
+
+    // ── PRIORITY 3 — Radar (month vs month, two-period comparison by category) ──
+    if (/(last|pichhl[ae])\s*month.*(vs|versus|compare|aur).*(this|is|current)\s*month/i.test(msg)) return "radar";
+    if (/(this|is|current)\s*month.*(vs|versus|compare|aur).*(last|pichhl[ae])\s*month/i.test(msg)) return "radar";
+    if (/monthly\s*(credit|debit)\s*(vs|versus|aur|and)\s*(credit|debit)|credit\s*debit\s*monthly\s*compar/i.test(msg)) return "radar";
+    if (/(last|pichhl[ae])\s*month\s*(vs|compare|aur)\s*(this|current|is)\s*month/i.test(msg)) return "radar";
+
+    // ── PRIORITY 4 — Stacked bar (category × month matrix) ──
+    if (/category\s*month[\s-]?wise|month[\s-]?wise\s*category|categor.*har\s*mahine|har\s*mahine.*categor/i.test(msg)) return "stackedBar";
+    if (/monthly\s*category\s*(breakdown|split|detail)|category\s*wise\s*monthly/i.test(msg)) return "stackedBar";
+
+    // ── PRIORITY 5 — Credit vs Debit Pie (overall credit/debit split) ──
+    if (/(credit|income|aay)\s*(vs|versus|aur|and|compared\s*to)\s*(debit|expense|kharch)/i.test(msg)) return "creditDebitPie";
+    if (/(debit|expense|kharch)\s*(vs|versus|aur|and|compared\s*to)\s*(credit|income|aay)/i.test(msg)) return "creditDebitPie";
+    if (/overall\s*(credit|debit)\s*(vs|split|ratio|percentage)/i.test(msg)) return "creditDebitPie";
+
+    // ── PRIORITY 6 — Pie (this-month category breakdown) ──
+    if (/this\s*month.*categor|is\s*mahine.*categor|categor.*this\s*month|categor.*is\s*mahine/i.test(msg)) return "pie";
+    if (/monthly\s*expense\s*distribution|mahine\s*ka\s*share|is\s*mahine\s*ka\s*breakdown/i.test(msg)) return "pie";
+    if (/category\s*(breakdown|split|distribution|wise)\s*(this|current|is)?\s*month/i.test(msg)) return "pie";
+
+    // ── PRIORITY 7 — Horizontal bar (top/highest categories ranking) ──
+    if (/top\s*\d*\s*(categor|expense|kharch|spending)/i.test(msg)) return "horizontalBar";
+    if (/sabse\s*zyada\s*(kharch|expense)|highest\s*(spend|expense)|maximum\s*(spend|expense)/i.test(msg)) return "horizontalBar";
+    if (/kitna\s*kharch.*categor|categor.*kitna\s*kharch/i.test(msg)) return "horizontalBar";
+    if (/ranking\s*(of\s*)?(categor|expense)|categor.*rank/i.test(msg)) return "horizontalBar";
+    if (/overall\s*(spend|expense|kharch)\s*(by\s*)?categor|total\s*categor.*all\s*time/i.test(msg)) return "horizontalBar";
+
+    // ── PRIORITY 8 — Area (full-year trend / cumulative) ──
+    if (/full[\s-]?year\s*(expense|kharch|spend|data|summary|trend)/i.test(msg)) return "area";
+    if (/annual\s*(expense|kharch|spend|summary|breakdown|trend)/i.test(msg)) return "area";
+    if (/saal[\s-]?bhar\s*(ka\s*)?(kharch|expense)/i.test(msg)) return "area";
+    if (/poore\s*saal\s*(ka\s*)?(kharch|expense)/i.test(msg)) return "area";
+    if (/(expense|kharch|spend)\s*(of|in|for)\s*20\d{2}/i.test(msg) && !/month/i.test(msg)) return "area";
+    if (/20\d{2}\s*(ka\s*)?(poora|full|complete|sab|all)\s*(kharch|expense|spend)/i.test(msg)) return "area";
+
+    // ── PRIORITY 9 — Line (trend / pattern over time) ──
+    if (/trend|spending\s*pattern|expense\s*pattern/i.test(msg)) return "line";
+    if (/badhna|ghatna|zyada\s*ho\s*raha|kam\s*ho\s*raha|kitna\s*badh/i.test(msg)) return "line";
+    if (/over\s*time|time\s*series|month\s*over\s*month/i.test(msg)) return "line";
+
+    // ── PRIORITY 10 — Bar (monthly debit/credit comparison — only when clearly multi-month) ──
+    // Must explicitly ask for monthly breakdown — NOT just any spending question
+    if (/month[\s-]?wise\s*(expense|kharch|spend|breakdown|summary|report)/i.test(msg)) return "bar";
+    if (/monthly\s*(expense|kharch|spend)\s*(breakdown|summary|report|comparison)/i.test(msg)) return "bar";
+    if (/har\s*mahine\s*(ka\s*)?(kharch|expense|total)/i.test(msg)) return "bar";
+    if (/mahine\s*ke\s*hisab\s*(se\s*)?(kharch|expense)/i.test(msg)) return "bar";
+    if (/year(ly)?\s*(overview|summary|expense|breakdown)\s*(by\s*month|monthly)?/i.test(msg) && !/full/i.test(msg)) return "bar";
+    if (/sal\s*bhar.*monthly|monthly.*sal\s*bhar/i.test(msg)) return "bar";
+
+    // ── DO NOT add generic fallback to "bar" — if nothing matched, return null ──
+    return null;
+}
+
+// ==================== BUILD CHART DATA ====================
+function buildChartData(
+    chartType: string,
+    data: any[],
+    activeCategories: string[],
+    currency: string,
+    currentMonth: number,
+    targetYear: number,
+    currentMonthName: string
+): object | null {
+
+    // This-month category map (debits only)
+    const thisMonthData = data.filter((e) => {
+        const d = new Date(e.Date);
+        return d.getMonth() + 1 === currentMonth && d.getFullYear() === targetYear;
+    });
+
+    const categoryMap: Record<string, number> = {};
+    thisMonthData.forEach((e) => {
+        if (e.ExpenseType !== "Cr.") {
+            const rawCat = (e.ExpenseDescType || e.Description || "Other").trim();
+            const cat = activeCategories.includes(rawCat) ? rawCat : "Other";
+            categoryMap[cat] = (categoryMap[cat] || 0) + Number(e.Expenses);
+        }
+    });
+
+    const categoryLabels = Object.keys(categoryMap);
+    const categoryValues = Object.values(categoryMap);
+
+    // Monthly totals for targetYear
+    const monthOrder = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    const monthMap: Record<string, { debit: number; credit: number }> = {};
+    data.forEach((e) => {
+        const d = new Date(e.Date);
+        if (d.getFullYear() === targetYear) {
+            const monthKey = monthOrder[d.getMonth()];
+            if (!monthMap[monthKey]) monthMap[monthKey] = { debit: 0, credit: 0 };
+            if (e.ExpenseType === "Cr.") monthMap[monthKey].credit += Number(e.Expenses);
+            else monthMap[monthKey].debit += Number(e.Expenses);
+        }
+    });
+
+    const sortedMonths = monthOrder.filter((m) => monthMap[m]);
+    const monthDebits = sortedMonths.map((m) => Math.round(monthMap[m].debit));
+    const monthCredits = sortedMonths.map((m) => Math.round(monthMap[m].credit));
+
+    // All-time totals
+    let totalCredit = 0;
+    let totalDebit = 0;
+    data.forEach((e) => {
+        if (e.ExpenseType === "Cr.") totalCredit += Number(e.Expenses);
+        else totalDebit += Number(e.Expenses);
+    });
+
+    // All-time category totals (debit)
+    const allCategoryMap: Record<string, number> = {};
+    data.forEach((e) => {
+        if (e.ExpenseType !== "Cr.") {
+            const rawCat = (e.ExpenseDescType || e.Description || "Other").trim();
+            const cat = activeCategories.includes(rawCat) ? rawCat : "Other";
+            allCategoryMap[cat] = (allCategoryMap[cat] || 0) + Number(e.Expenses);
+        }
+    });
+
+    switch (chartType) {
+
+        // ── Daywise ──
+        case "daywise": {
+            const dayCreditMap: Record<number, number> = {};
+            const dayDebitMap: Record<number, number> = {};
+            data.forEach((e) => {
+                const d = new Date(e.Date);
+                if (d.getFullYear() === targetYear) {
+                    const ts = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+                    if (e.ExpenseType === "Cr.") dayCreditMap[ts] = (dayCreditMap[ts] || 0) + Number(e.Expenses);
+                    else dayDebitMap[ts] = (dayDebitMap[ts] || 0) + Number(e.Expenses);
+                }
+            });
+            const creditSeries: [number, number][] = Object.entries(dayCreditMap).map(([ts, v]) => [Number(ts), Math.round(v)]).sort((a, b) => a[0] - b[0]);
+            const debitSeries: [number, number][] = Object.entries(dayDebitMap).map(([ts, v]) => [Number(ts), Math.round(v)]).sort((a, b) => a[0] - b[0]);
+            if (!creditSeries.length && !debitSeries.length) return null;
+            return { type: "daywise", title: `${targetYear} — Day-wise Transactions`, currency, creditSeries, debitSeries };
+        }
+
+        // ── Tree ──
+        case "tree": {
+            const sortedCats = Object.entries(allCategoryMap).sort((a, b) => b[1] - a[1]);
+            if (!sortedCats.length) return null;
+            const nodes = [
+                { id: "root", name: "All Expenses", value: Math.round(totalDebit), parent: null },
+                ...sortedCats.map(([cat, val], i) => ({
+                    id: `cat_${i}`, name: cat, value: Math.round(val),
+                    parent: "root", pct: ((val / totalDebit) * 100).toFixed(1),
+                })),
+            ];
+            return { type: "tree", title: `All Time — Expense Category Tree`, currency, nodes, totalDebit: Math.round(totalDebit) };
+        }
+
+        // ── Radar ──
+        case "radar": {
+            const lastMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+            const lastMonthYear = currentMonth === 1 ? targetYear - 1 : targetYear;
+            const lastMonthCatMap: Record<string, number> = {};
+            data.forEach((e) => {
+                const d = new Date(e.Date);
+                if (d.getMonth() + 1 === lastMonth && d.getFullYear() === lastMonthYear && e.ExpenseType !== "Cr.") {
+                    const rawCat = (e.ExpenseDescType || e.Description || "Other").trim();
+                    const cat = activeCategories.includes(rawCat) ? rawCat : "Other";
+                    lastMonthCatMap[cat] = (lastMonthCatMap[cat] || 0) + Number(e.Expenses);
+                }
+            });
+            const allCats = Array.from(new Set([...Object.keys(categoryMap), ...Object.keys(lastMonthCatMap)]));
+            if (!allCats.length) return null;
+            const lastMonthName = new Date(lastMonthYear, lastMonth - 1, 1).toLocaleString("en-US", { month: "long" });
+            return {
+                type: "radar",
+                title: `${lastMonthName} vs ${currentMonthName} — Category Radar`,
+                currency, labels: allCats,
+                datasets: [
+                    { label: lastMonthName, data: allCats.map((c) => Math.round(lastMonthCatMap[c] || 0)) },
+                    { label: currentMonthName, data: allCats.map((c) => Math.round(categoryMap[c] || 0)) },
+                ],
+            };
+        }
+
+        // ── Stacked bar ──
+        case "stackedBar": {
+            const yearCatMonthMap: Record<string, Record<string, number>> = {};
+            data.forEach((e) => {
+                const d = new Date(e.Date);
+                if (d.getFullYear() === targetYear && e.ExpenseType !== "Cr.") {
+                    const monthKey = monthOrder[d.getMonth()];
+                    const rawCat = (e.ExpenseDescType || e.Description || "Other").trim();
+                    const cat = activeCategories.includes(rawCat) ? rawCat : "Other";
+                    if (!yearCatMonthMap[cat]) yearCatMonthMap[cat] = {};
+                    yearCatMonthMap[cat][monthKey] = (yearCatMonthMap[cat][monthKey] || 0) + Number(e.Expenses);
+                }
+            });
+            const cats = Object.keys(yearCatMonthMap);
+            if (!cats.length || !sortedMonths.length) return null;
+            return {
+                type: "stackedBar",
+                title: `${targetYear} — Monthly Category Breakdown`,
+                currency, labels: sortedMonths,
+                datasets: cats.map((cat) => ({
+                    label: cat,
+                    data: sortedMonths.map((m) => Math.round(yearCatMonthMap[cat][m] || 0)),
+                })),
+            };
+        }
+
+        // ── Credit vs Debit Pie ──
+        case "creditDebitPie":
+            if (!totalCredit && !totalDebit) return null;
+            return {
+                type: "pie",
+                title: `Overall Credit vs Debit`,
+                currency,
+                labels: ["Credit (आय)", "Debit (खर्च)"],
+                datasets: [{ data: [Math.round(totalCredit), Math.round(totalDebit)] }],
+            };
+
+        // ── Pie ──
+        case "pie":
+            if (!categoryLabels.length) return null;
+            return {
+                type: "pie",
+                title: `${currentMonthName} ${targetYear} — Category Breakdown`,
+                currency, labels: categoryLabels,
+                datasets: [{ data: categoryValues.map(Math.round) }],
+            };
+
+        // ── Donut ──
+        case "donut":
+            if (!categoryLabels.length) return null;
+            return {
+                type: "donut",
+                title: `${currentMonthName} ${targetYear} — Expense Distribution`,
+                currency, labels: categoryLabels,
+                datasets: [{ data: categoryValues.map(Math.round) }],
+            };
+
+        // ── Bar ──
+        case "bar":
+            if (!sortedMonths.length) return null;
+            return {
+                type: "bar",
+                title: `${targetYear} — Monthly Debit vs Credit`,
+                currency, labels: sortedMonths,
+                datasets: [
+                    { label: "Debit", data: monthDebits },
+                    { label: "Credit", data: monthCredits },
+                ],
+            };
+
+        // ── Line ──
+        case "line":
+            if (!sortedMonths.length) return null;
+            return {
+                type: "line",
+                title: `${targetYear} — Monthly Expense Trend`,
+                currency, labels: sortedMonths,
+                datasets: [
+                    { label: "Debit", data: monthDebits },
+                    { label: "Credit", data: monthCredits },
+                ],
+            };
+
+        // ── Area ──
+        case "area":
+            if (!sortedMonths.length) return null;
+            return {
+                type: "area",
+                title: `${targetYear} — Cumulative Expense Trend`,
+                currency, labels: sortedMonths,
+                datasets: [
+                    { label: "Debit", data: monthDebits },
+                    { label: "Credit", data: monthCredits },
+                ],
+            };
+
+        // ── Horizontal Bar ──
+        case "horizontalBar": {
+            const sorted = Object.entries(allCategoryMap)
+                .map(([label, value]) => ({ label, value }))
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 8);
+            if (!sorted.length) return null;
+            return {
+                type: "horizontalBar",
+                title: `Top Spending Categories (All Time)`,
+                currency,
+                labels: sorted.map((s) => s.label),
+                datasets: [{ label: "Expense", data: sorted.map((s) => Math.round(s.value)) }],
+            };
+        }
+
+        default:
+            return null;
+    }
+}
+
 // ==================== BUILD SUMMARY ====================
 function buildSummary(
-    data: any[],
-    currency: string,
-    activeCategories: string[],
-    currentMonth: number,
-    currentYear: number,
-    currentMonthName: string,
-    currentDate: string
+    data: any[], currency: string, activeCategories: string[],
+    currentMonth: number, currentYear: number,
+    currentMonthName: string, currentDate: string
 ): string {
     let totalCredit = 0;
     let totalDebit = 0;
@@ -154,18 +577,14 @@ function buildSummary(
         else thisMonthDebit += amount;
     });
 
-    // Overall category map
     const categoryMap: Record<string, { credit: number; debit: number; count: number }> = {};
-
     data.forEach((e) => {
         const amount = Number(e.Expenses);
         const isCredit = e.ExpenseType === "Cr.";
         const rawCat = (e.ExpenseDescType || e.Description || "Other").trim();
         const cat = activeCategories.includes(rawCat) ? rawCat : "Other";
-
         if (isCredit) totalCredit += amount;
         else totalDebit += amount;
-
         if (!categoryMap[cat]) categoryMap[cat] = { credit: 0, debit: 0, count: 0 };
         if (isCredit) categoryMap[cat].credit += amount;
         else categoryMap[cat].debit += amount;
@@ -176,36 +595,20 @@ function buildSummary(
     const newest = [...data].reverse()[0];
     const latestBalance = newest?.Balance ?? balance;
 
-    // Recent 5 transactions (compact)
-    const recent5 = [...data]
-        .reverse()
-        .slice(0, 5)
-        .map((e) =>
-            `${new Date(e.Date).toLocaleDateString("en-GB")} ${e.ExpenseType} ${currency}${Number(e.Expenses).toLocaleString()} [${e.ExpenseDescType || e.Description}]`
-        )
+    const recent5 = [...data].reverse().slice(0, 5)
+        .map((e) => `${new Date(e.Date).toLocaleDateString("en-GB")} ${e.ExpenseType} ${currency}${Number(e.Expenses).toLocaleString()} [${e.ExpenseDescType || e.Description}]`)
         .join("\n");
 
-    // Overall category breakdown (compact)
     const categoryLines = Object.entries(categoryMap)
         .sort((a, b) => (b[1].debit + b[1].credit) - (a[1].debit + a[1].credit))
-        .map(([cat, val]) =>
-            `${cat}: Dr${currency}${val.debit.toLocaleString()} Cr${currency}${val.credit.toLocaleString()} (${val.count})`
-        )
+        .map(([cat, val]) => `${cat}: Dr${currency}${val.debit.toLocaleString()} Cr${currency}${val.credit.toLocaleString()} (${val.count})`)
         .join("\n");
 
-    // This month transactions (compact)
-    const thisMonthLines =
-        thisMonthData.length > 0
-            ? thisMonthData
-                .map((e) =>
-                    `${new Date(e.Date).toLocaleDateString("en-GB")} ${e.ExpenseType} ${currency}${Number(e.Expenses).toLocaleString()} [${e.ExpenseDescType || e.Description}]`
-                )
-                .join("\n")
-            : `No transactions in ${currentMonthName} ${currentYear}.`;
+    const thisMonthLines = thisMonthData.length > 0
+        ? thisMonthData.map((e) => `${new Date(e.Date).toLocaleDateString("en-GB")} ${e.ExpenseType} ${currency}${Number(e.Expenses).toLocaleString()} [${e.ExpenseDescType || e.Description}]`).join("\n")
+        : `No transactions in ${currentMonthName} ${currentYear}.`;
 
-    // ── MONTH × CATEGORY BREAKDOWN (compact format) ──
     const monthCatMap: Record<string, Record<string, { dr: number; cr: number; count: number }>> = {};
-
     data.forEach((e) => {
         const d = new Date(e.Date);
         const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -213,16 +616,13 @@ function buildSummary(
         const cat = activeCategories.includes(rawCat) ? rawCat : "Other";
         const amount = Number(e.Expenses);
         const isCredit = e.ExpenseType === "Cr.";
-
         if (!monthCatMap[key]) monthCatMap[key] = {};
         if (!monthCatMap[key][cat]) monthCatMap[key][cat] = { dr: 0, cr: 0, count: 0 };
-
         if (isCredit) monthCatMap[key][cat].cr += amount;
         else monthCatMap[key][cat].dr += amount;
         monthCatMap[key][cat].count++;
     });
 
-    // Format: "2024-03|Tea:Dr2890(6),Water:Dr440(2)"  — very compact to save tokens
     const monthCatLines = Object.entries(monthCatMap)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, cats]) => {
@@ -234,11 +634,9 @@ function buildSummary(
                     if (v.dr > 0) parts.push(`Dr${v.dr}`);
                     if (v.cr > 0) parts.push(`Cr${v.cr}`);
                     return `${cat}:${parts.join("+")}(${v.count})`;
-                })
-                .join(",");
+                }).join(",");
             return `${key}|${catStr}`;
-        })
-        .join("\n");
+        }).join("\n");
 
     return `
 DATE:${currentDate} CUR:${currency} TXNS:${data.length}
@@ -263,7 +661,8 @@ ${monthCatLines}
 async function callClaude(
     userMessage: string,
     summary: string,
-    conversationHistory: { role: string; content: string }[] = []
+    conversationHistory: { role: string; content: string }[] = [],
+    hasChart: boolean = false
 ): Promise<string> {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) throw new Error("API key not configured");
@@ -274,40 +673,42 @@ async function callClaude(
 ${summary}
 </data>
 
-RULES:
+CRITICAL OUTPUT RULES:
 
-1. LANGUAGE: Mirror user exactly — English→English, Hindi/Hinglish→Hindi.
+0. NEVER OUTPUT HTML/IFRAMES/LINKS: NEVER include <iframe>, <img>, <a href>, URLs, or HTML tags. NEVER reference external chart tools. The chart is ALREADY rendered by the app — you only write plain text.
+
+1. LANGUAGE: Mirror user exactly — English→English, Hindi/Hinglish→Hindi/Hinglish.
 
 2. DATA: You have ALL data for ALL months and categories. NEVER say data is unavailable.
-   - For month-wise category queries, scan MONTH_CATEGORY rows and compute.
    - MONTH_CATEGORY format: YYYY-MM|Category:DrAmount+CrAmount(count)
    - For "this month/is mahine" queries, use THIS_MONTH section.
-   - Category hints: salary=Income, Tea=Tea expense.
 
-3. TONE: Be warm and helpful. Avoid alarming language like "⚠️" or "significantly more".
-   Instead use neutral observations. Never judge the user's spending habits.
+3. CHART IN RESPONSE — A chart ${hasChart ? "HAS" : "has NOT"} been auto-generated with this response.
+   ${hasChart
+        ? `- Since a chart is already shown below your text, keep your text answer SHORT and FOCUSED.
+   - ONE acknowledgement line only: "Neeche chart bhi dekh sakte ho 👇" (Hindi) or "Chart is shown below 👇" (English).
+   - Then 3–5 bullet insights MAX. No lengthy descriptions of what the chart shows.
+   - Total response: max 8 lines.`
+        : `- No chart with this response. Give a complete text answer.
+   - Use bullet points for 3+ item lists. Be concise but complete.`
+    }
 
-4. SORTING: When showing monthly breakdowns, ALWAYS sort months chronologically
-   (Jan → Feb → Mar ... → Dec). Never sort by amount unless user explicitly asks.
+4. TONE: Warm, helpful. No alarming language. No judgment on spending habits.
 
-5. MISSING MONTHS: If a category has no spend in a month, skip that month silently.
-   Do not show ₹0 entries.
+5. SORTING: Monthly breakdowns always chronological (Jan → Dec).
 
-6. COMPARISON FORMAT (for year-vs-year or period comparisons):
-   - Show a clean summary line first: total + transaction count for each period.
-   - Then show monthly breakdown in chronological order (Jan to Dec).
-   - Mark the highest month with 🔝 and lowest with 🔽 (only if 3+ months exist).
-   - End with a one-line neutral observation (no alarm, no judgment).
-   - Example format for monthly list:
-     Jan: ₹2,530
-     Feb: ₹3,275
-     Mar: ₹3,100  ...and so on
+6. MISSING MONTHS: Skip months with ₹0. Do not show empty entries.
 
-7. GENERAL FORMAT:
-   - Lead with the direct answer, then supporting detail.
-   - Use bullet points only for lists of 3+ items.
-   - Keep responses concise — no filler phrases like "Great question!" or "Based on your data...".
-   - Use emojis sparingly: only ☕ 📊 🔝 🔽 💰 are appropriate for finance context.`;
+7. COMPARISON FORMAT (year-vs-year or period comparisons):
+   - Summary line first: total + count for each period.
+   - Monthly breakdown chronologically.
+   - Mark highest 🔝 lowest 🔽 (only if 3+ months).
+   - One neutral closing observation.
+
+8. GENERAL FORMAT:
+   - Lead with direct answer, then detail.
+   - No filler: no "Great question!", no "Based on your data...".
+   - Emojis: only 📊 🔝 🔽 💰 ☕ and sparingly.`;
 
     const messages = [
         ...conversationHistory
@@ -339,7 +740,6 @@ RULES:
     }
 
     const claudeData = await response.json();
-
     return (
         claudeData?.content
             ?.filter((block: any) => block.type === "text")
