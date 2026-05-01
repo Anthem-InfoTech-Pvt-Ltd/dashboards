@@ -11,7 +11,7 @@ export interface ChartDataset {
 
 export interface ChatChartData {
     type: "pie" | "donut" | "bar" | "line" | "area" | "horizontalBar"
-        | "daywise" | "tree" | "radar" | "stackedBar" | "yearlyStackedBar";
+    | "daywise" | "tree" | "radar" | "stackedBar" | "yearlyStackedBar";
     title: string;
     currency: string;
     labels?: string[];
@@ -110,7 +110,6 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
             const nodeCount = chartData.nodes ? chartData.nodes.filter(n => n.parent === "root").length : 4;
             return fullscreen ? Math.max(500, nodeCount * 80 + 80) : Math.max(380, nodeCount * 65 + 60);
         }
-        // yearlyStackedBar: height based on number of years (labels = years)
         if (type === "yearlyStackedBar") {
             const yearCount = chartData.labels?.length || 4;
             return Math.max(fullscreen ? 320 : 260, yearCount * 60 + 100);
@@ -134,7 +133,7 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
         try {
             if (instanceRef.current?.dispose) instanceRef.current.dispose();
             else if (instanceRef.current?.destroy) instanceRef.current.destroy();
-        } catch (_) {}
+        } catch (_) { }
         instanceRef.current = null;
 
         if (usesHighcharts && HC) renderHighcharts();
@@ -144,7 +143,7 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
             try {
                 if (instanceRef.current?.dispose) instanceRef.current.dispose();
                 else if (instanceRef.current?.destroy) instanceRef.current.destroy();
-            } catch (_) {}
+            } catch (_) { }
             instanceRef.current = null;
         };
     }, [ready, chartData, fullscreen]);
@@ -204,7 +203,12 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                 xAxis: { type: "datetime", labels: { style: { color: "#374151" } }, lineColor: "#d1d5db", tickColor: "#d1d5db" },
                 yAxis: {
                     opposite: false, title: { text: `Amount (${currency})` },
-                    labels: { formatter() { return fmt(this.value as number, currency); }, style: { color: "#374151" } },
+                    labels: {
+                        formatter(this: Highcharts.AxisLabelsFormatterContextObject) {
+                            return fmt(this.value as number, currency);
+                        },
+                        style: { color: "#374151" }
+                    },
                     gridLineColor: "#e5e7eb",
                 },
                 tooltip: {
@@ -231,7 +235,12 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                 xAxis: { categories: labels, labels: { style: { color: "#374151" } }, lineColor: "#e5e7eb", tickColor: "#e5e7eb" },
                 yAxis: {
                     title: { text: `Amount (${currency})`, style: { color: "#374151" } },
-                    labels: { formatter() { return fmt(this.value as number, currency); }, style: { color: "#374151" } },
+                    labels: {
+                        formatter(this: Highcharts.AxisLabelsFormatterContextObject) {
+                            return fmt(this.value as number, currency);
+                        },
+                        style: { color: "#374151" }
+                    },
                     gridLineColor: "#e5e7eb",
                 },
                 tooltip: {
@@ -259,7 +268,12 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                 xAxis: { categories: labels, labels: { style: { color: "#4b5563" } }, gridLineColor: "#e5e7eb", lineColor: "#e5e7eb", tickColor: "#e5e7eb" },
                 yAxis: {
                     title: { text: `Total Expenses (${currency})`, style: { color: "#4b5563" } },
-                    labels: { formatter() { return fmt(this.value as number, currency); }, style: { color: "#4b5563" } },
+                    labels: {
+                        formatter(this: Highcharts.AxisLabelsFormatterContextObject) {
+                            return fmt(this.value as number, currency);
+                        },
+                        style: { color: "#4b5563" }
+                    },
                     gridLineColor: "#e5e7eb",
                 },
                 legend: { align: "center", verticalAlign: "bottom", layout: "horizontal", backgroundColor: "#ffffff", itemStyle: { color: "#1f2937", fontWeight: "500", fontSize: "12px" }, borderColor: "#e5e7eb", symbolWidth: 40 },
@@ -297,10 +311,12 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                 yAxis: {
                     min: 0, title: { text: `Amount (${currency})` },
                     labels: {
-                        formatter() {
+                        formatter(this: Highcharts.AxisLabelsFormatterContextObject) {
                             const v = this.value as number;
+
                             if (v >= 1000000) return currency + (v / 1000000).toFixed(1) + "M";
                             if (v >= 1000) return currency + (v / 1000).toFixed(0) + "k";
+
                             return currency + HC.numberFormat(v, 0, ".", ",");
                         },
                     },
@@ -342,7 +358,7 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
             return;
         }
 
-        // ── STACKED BAR (monthly × category, vertical) ──
+        // ── STACKED BAR ──
         if (type === "stackedBar") {
             instanceRef.current = HC.chart(el, {
                 accessibility: { enabled: false },
@@ -354,7 +370,8 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                     min: 0, title: { text: `Amount (${currency})` },
                     labels: {
                         formatter() {
-                            const v = this.value as number;
+                            const v = (this as any).value as number;
+
                             if (v >= 1000) return currency + (v / 1000).toFixed(0) + "k";
                             return currency + HC.numberFormat(v, 0, ".", ",");
                         },
@@ -397,8 +414,7 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
             return;
         }
 
-        // ── NEW: YEARLY STACKED BAR (year × category, horizontal) ──
-        // labels = years (Y-axis), datasets = one per category (X = amount)
+        // ── YEARLY STACKED BAR ──
         if (type === "yearlyStackedBar") {
             instanceRef.current = HC.chart(el, {
                 accessibility: { enabled: false },
@@ -408,7 +424,7 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                 exporting: { enabled: false },
                 colors: STACKED_COLORS,
                 xAxis: {
-                    categories: labels, // years
+                    categories: labels,
                     crosshair: true,
                     labels: { style: { color: "#374151", fontSize: "12px", fontWeight: "600" } },
                     title: { text: undefined },
@@ -417,11 +433,13 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                     min: 0,
                     title: { text: `Amount (${currency})`, style: { color: "#374151" } },
                     labels: {
-                        formatter() {
+                        formatter(this: Highcharts.AxisLabelsFormatterContextObject) {
                             const v = this.value as number;
+
                             if (v >= 1000000) return currency + (v / 1000000).toFixed(1) + "M";
                             if (v >= 100000) return currency + (v / 100000).toFixed(1) + "L";
                             if (v >= 1000) return currency + (v / 1000).toFixed(0) + "k";
+
                             return currency + HC.numberFormat(v, 0, ".", ",");
                         },
                         style: { color: "#374151" },
@@ -449,7 +467,6 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                         let total = 0;
                         const year = (this as any).points?.[0]?.key || "";
                         let html = `<div style="font-weight:700;margin-bottom:6px;font-size:13px">📅 ${year}</div>`;
-                        // Only show categories with value > 0
                         const pts = ((this as any).points || []).filter((p: any) => p.y > 0);
                         pts.sort((a: any, b: any) => b.y - a.y);
                         pts.forEach((p: any) => {
@@ -475,7 +492,6 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                 plotOptions: {
                     bar: {
                         stacking: "normal",
-                        // Show data labels only for segments wide enough to fit
                         dataLabels: {
                             enabled: true,
                             formatter() {
@@ -486,7 +502,6 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                                 return currency + v;
                             },
                             style: { textOutline: "none", fontSize: "10px", color: "#ffffff", fontWeight: "600" },
-                            // Only show label if segment is visually wide enough
                             filter: { property: "percentage", operator: ">", value: 5 },
                         },
                         borderRadius: 2,
@@ -525,7 +540,7 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                         let html = `<div style="font-weight:600;margin-bottom:6px;font-size:12px">${label}</div>`;
                         datasets.forEach((ds, i) => {
                             const color = i === 0 ? RADAR_CREDIT : RADAR_DEBIT;
-                            const name = i === 0 ? "Credit" : "Debit";
+                            const name = ds.label || (i === 0 ? "Credit" : "Debit");
                             html += `<div style="display:flex;justify-content:space-between;gap:16px;font-size:12px"><span style="color:${color}">${name}: </span><b>${fmt(vals[i] || 0, currency)}</b></div>`;
                         });
                         return `<div style="padding:10px 12px;min-width:130px;background:#fff;border-radius:8px;font-size:12px;box-shadow:0 4px 12px rgba(0,0,0,0.2)">${html}</div>`;
@@ -621,7 +636,7 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                 ro.observe(el);
                 const orig = chart.dispose.bind(chart);
                 chart.dispose = () => { ro.disconnect(); orig(); };
-            } catch (_) {}
+            } catch (_) { }
         }
     }
 
@@ -646,13 +661,13 @@ export default function ChatChart({ chartData, fullscreen = false }: ChatChartPr
                 </span>
                 <span style={{ color: "#64748b", fontSize: "11px", marginLeft: 8, flexShrink: 0 }}>
                     {pieTotal > 0 ? `Total: ${fmt(pieTotal, currency)}` :
-                     treeTotal > 0 ? `Total: ${fmt(treeTotal, currency)}` :
-                     yearlyTotal > 0 ? `All-time: ${fmt(yearlyTotal, currency)}` :
-                     type === "daywise" ? "Daily view • Credit / Debit" : ""}
+                        treeTotal > 0 ? `Total: ${fmt(treeTotal, currency)}` :
+                            yearlyTotal > 0 ? `All-time: ${fmt(yearlyTotal, currency)}` :
+                                type === "daywise" ? "Daily view • Credit / Debit" : ""}
                 </span>
             </div>
 
-            {/* Legend for bar/line/area */}
+            {/* Legend for bar/area */}
             {["bar", "area"].includes(type) && (chartData.datasets?.length || 0) > 1 && (
                 <div style={{ display: "flex", gap: "14px", padding: "6px 14px 4px", flexWrap: "wrap" }}>
                     {chartData.datasets!.map((ds, i) => {
