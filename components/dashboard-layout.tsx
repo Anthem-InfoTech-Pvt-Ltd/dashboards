@@ -11,6 +11,7 @@ import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useAuth } from "@/context/auth-context"
+import ExpenseChatbot from "./ExpenseChatbot"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
@@ -46,35 +47,35 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
     },
   ]
 
-//   const menuItems = [
-//   { title: "Dashboard", icon: LayoutDashboard, href: "/" },
+  //   const menuItems = [
+  //   { title: "Dashboard", icon: LayoutDashboard, href: "/" },
 
-//   {
-//     title: "Expenses",
-//     icon: CreditCard,
-//     href: "/expenses/dashboard",
-//     children: [
-//       { title: "Expenses List", href: "/expenses/expenses-list" },
-//       { title: "Expense Types", href: "/expenses/expense-types" },
-//     ],
-//   },
+  //   {
+  //     title: "Expenses",
+  //     icon: CreditCard,
+  //     href: "/expenses/dashboard",
+  //     children: [
+  //       { title: "Expenses List", href: "/expenses/expenses-list" },
+  //       { title: "Expense Types", href: "/expenses/expense-types" },
+  //     ],
+  //   },
 
-//   // ⭐ SHOW Employees menu ONLY if email is allowed  
-//   ...(allowedEmployeeEmails.includes(user?.email)
-//     ? [
-//         {
-//           title: "Employees",
-//           icon: Users,
-//           href: "/employees/dashboard",
-//           children: [
-//             { title: "Employee List", href: "/employees/employees-list" },
-//             { title: "Roles", href: "/employees/roles" },
-//             { title: "Departments", href: "/employees/departments" },
-//           ],
-//         },
-//       ]
-//     : []),
-// ];
+  //   // ⭐ SHOW Employees menu ONLY if email is allowed  
+  //   ...(allowedEmployeeEmails.includes(user?.email)
+  //     ? [
+  //         {
+  //           title: "Employees",
+  //           icon: Users,
+  //           href: "/employees/dashboard",
+  //           children: [
+  //             { title: "Employee List", href: "/employees/employees-list" },
+  //             { title: "Roles", href: "/employees/roles" },
+  //             { title: "Departments", href: "/employees/departments" },
+  //           ],
+  //         },
+  //       ]
+  //     : []),
+  // ];
 
   // Open submenu based on current path
   useEffect(() => {
@@ -205,6 +206,43 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           })}
         </nav>
 
+        <div className="absolute bottom-4 left-4 right-4 space-y-2">
+
+          {/* AI Help */}
+          <Button
+            variant="ghost"
+            onClick={() => window.dispatchEvent(new Event("openExpenseChatbot"))}
+            className={cn(
+              "w-full justify-start gap-3 hover:bg-blue-50 dark:hover:bg-gray-700 rounded-md",
+              sidebarCollapsed && "justify-center px-2"
+            )}
+          >
+            <svg width="20" height="14" viewBox="0 0 100 70" fill="none">
+              <ellipse cx="8" cy="35" rx="8" ry="12" fill="#2563eb" />
+              <ellipse cx="92" cy="35" rx="8" ry="12" fill="#2563eb" />
+              <rect x="14" y="5" width="72" height="60" rx="10" fill="#2563eb" />
+              <ellipse cx="36" cy="30" rx="6" ry="8" fill="white" />
+              <ellipse cx="64" cy="30" rx="6" ry="8" fill="white" />
+              <rect x="35" y="46" width="30" height="10" rx="3" fill="white" />
+              <rect x="42" y="49" width="16" height="4" rx="1" fill="#2563eb" />
+            </svg>
+            {!sidebarCollapsed && <span>AI Help</span>}
+          </Button>
+
+          {/* Logout */}
+          <Button
+            variant="ghost"
+            className={cn(
+              "w-full justify-start gap-3 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md",
+              sidebarCollapsed && "justify-center px-2"
+            )}
+            onClick={signOut}
+          >
+            <LogOut className="h-4 w-4" />
+            {!sidebarCollapsed && <span>Logout</span>}
+          </Button>
+        </div>
+
         <div className="absolute bottom-4 left-4 right-4">
           <Button
             variant="ghost"
@@ -246,6 +284,7 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
           </DropdownMenu>
         </header>
         <main className="p-6">{children}</main>
+        <ExpenseChatbot />
       </div>
     </div>
   )

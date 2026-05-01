@@ -410,8 +410,15 @@ function buildChartData(
                     else dayDebitMap[ts] = (dayDebitMap[ts] || 0) + Number(e.Expenses);
                 }
             });
-            const creditSeries: [number, number][] = Object.entries(dayCreditMap).map(([ts, v]) => [Number(ts), Math.round(v)]).sort((a, b) => a[0] - b[0]);
-            const debitSeries: [number, number][] = Object.entries(dayDebitMap).map(([ts, v]) => [Number(ts), Math.round(v)]).sort((a, b) => a[0] - b[0]);
+            // const creditSeries: [number, number][] = Object.entries(dayCreditMap).map(([ts, v]) => [Number(ts), Math.round(v)]).sort((a, b) => a[0] - b[0]);
+            // const debitSeries: [number, number][] = Object.entries(dayDebitMap).map(([ts, v]) => [Number(ts), Math.round(v)]).sort((a, b) => a[0] - b[0]);
+            const creditSeries: [number, number][] = Object.entries(dayCreditMap)
+                .map(([ts, v]): [number, number] => [Number(ts), Math.round(v)])
+                .sort((a, b) => a[0] - b[0]);
+
+            const debitSeries: [number, number][] = Object.entries(dayDebitMap)
+                .map(([ts, v]): [number, number] => [Number(ts), Math.round(v)])
+                .sort((a, b) => a[0] - b[0]);
             if (!creditSeries.length && !debitSeries.length) return null;
             return { type: "daywise", title: `${targetYear} — Day-wise Transactions`, currency, creditSeries, debitSeries };
         }
@@ -738,13 +745,13 @@ CRITICAL OUTPUT RULES:
 
 3. CHART IN RESPONSE — A chart ${hasChart ? "HAS" : "has NOT"} been auto-generated with this response.
    ${hasChart
-        ? `- Since a chart is already shown below your text, keep your text answer SHORT and FOCUSED.
+            ? `- Since a chart is already shown below your text, keep your text answer SHORT and FOCUSED.
    - ONE acknowledgement line only: "Neeche chart bhi dekh sakte ho 👇" (Hindi) or "Chart is shown below 👇" (English).
    - Then 3–5 bullet insights MAX. No lengthy descriptions of what the chart shows.
    - Total response: max 8 lines.`
-        : `- No chart with this response. Give a complete text answer.
+            : `- No chart with this response. Give a complete text answer.
    - Use bullet points for 3+ item lists. Be concise but complete.`
-    }
+        }
 
 4. TONE: Warm, helpful. No alarming language. No judgment on spending habits.
 

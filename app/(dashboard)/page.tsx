@@ -26,7 +26,7 @@ export default function Dashboard() {
     <ThemeContext.Provider value={{ primaryColor, secondaryColor, setPrimaryColor, setSecondaryColor }}>
       {/* <DashboardContent /> */}
       <MainDashboard />
-      <ExpenseChatbot />
+      {/* <ExpenseChatbot /> */}
     </ThemeContext.Provider>
   )
 }
